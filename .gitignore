@@ -160,3 +160,12 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Ignore tests folders:
+wfa_implicit*
+TODO_wfa*
+notebooks*
+example/plage_sst/._CRISP_5173_plage_dat.fits
+example/plage_sst/._CRISP_5173_plage_wav.fits
+models/._neural_fields.py
+models/._utils.py
