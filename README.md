@@ -1,6 +1,6 @@
 # Spectropolarimetric inversions using neural fields under the weak-field approximation
 
-This repository contains the code used to generate the results of the paper "Exploring spectropolarimetric inversions using neural fields: solar chromospheric magnetic field under the weak-field approximation" ([arXiv:2106.16007](https://arxiv.org/abs/2106.16007)).
+This repository contains the code used to generate the results of the paper "Exploring spectropolarimetric inversions using neural fields: solar chromospheric magnetic field under the weak-field approximation" ([arXiv:2409.05156](https://arxiv.org/abs/2409.05156)).
 
 ![example](docs/sketch_wINRWFA_large.png?raw=true "")
 **Figure 1** — Sketch of the neural field inversion of the magnetic field vector under the weak-field approximation. The neural field is a continuous representation of the magnetic field vector over the spatial and temporal domain. 
