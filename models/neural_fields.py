@@ -7,11 +7,10 @@ from . import utils
 
 
 
-# ===================================================================
+# =================================================================
 class temporal_mlp(nn.Module):
     """
-    The temporal information is treated as a Film: Feature-wise Linear Modulation.
-    It does not work as good as the MLP below.
+    The temporal information is treated as a Film: Feature-wise Linear Modulation. It does not work as good as the MLP below.
     """
     def __init__(self, dim_in=3, dim_out=1, num_resnet_blocks=3, 
                  num_layers_per_block=2, dim_hidden=50, activation=nn.GELU(), 
@@ -42,12 +41,10 @@ class temporal_mlp(nn.Module):
         self.last = nn.Linear(self.num_neurons, dim_out)
         if fourier_features:
             self.first = nn.Linear(2*m_freqs+dim_in, self.num_neurons)
-            # self.B = torch.from_numpy(np.random.normal(0.,sigma, size=(dim_in,m_freqs))).float() # Only valid for a single entry
 
             # sigma can be a float or a list of floats:
             n_param = len(sigma_spatial) if isinstance(sigma_spatial, list) else 1
             self.B = torch.from_numpy(np.random.normal(0.0, sigma_spatial, (m_freqs, n_param)).T).float()
-            # print('sigma:',sigma_spatial,'self.B.shape',self.B.shape)
 
     def forward(self, x):
         # if x in device, move also B to device:
@@ -72,7 +69,6 @@ class temporal_mlp(nn.Module):
             x = self.activation(self.beta0*self.first(xx_spatial))
 
         for i in range(self.num_resnet_blocks):
-            # print(beta.shape,beta[:,i].shape,self.resblocks[i][0](x).shape)
             z = self.activation(beta[:,i]+self.resblocks[i][0](x))
 
             for j in range(1, self.num_layers_per_block):
@@ -82,7 +78,7 @@ class temporal_mlp(nn.Module):
         return out
 
 
-# ===================================================================
+# =================================================================
 class mlp(nn.Module):
     """
     DenseNet with Fourier Features
@@ -151,10 +147,84 @@ class mlp(nn.Module):
 
 
 
+# =================================================================
+def optimal_batch(nfmodel, wfamodel, coordinates, minbatch=1000, maxbatch=1e9, lrinit=1e-3, trainBV=True, guesshelp=None, guess_regu=0.0, device='cuda',patience=50, normgrad = True, noise=0.0, reguB=None, reguB_weight=0.0, reguBazi=None, reguBazi_weight=0.0):
+    """ 
+    Run the the network with different batch sizes to find the optimal size for max speed.
+    """
+
+    if device == 'cuda':
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device_name = torch.cuda.get_device_name() if torch.cuda.is_available() else 'cpu'
+        if device_name != 'cpu':
+            print('Using device:',device_name)
+    else:
+        device = "cpu"
+
+    from tqdm import tqdm, trange
+    import time
+    import matplotlib.pyplot as plt
 
 
+    # Move model and coordinates to GPU if available
+    nfmodel = nfmodel.to(device)
+    coordinates = coordinates.clone().detach().float().to(device)
 
-# ====================================================================
+    optimizer = torch.optim.Adam(nfmodel.parameters(), lr=lrinit)
+    wholedataset = np.arange(coordinates.shape[0])
+    
+    output = {}
+    output["factor_size"] = []
+    output["timing_perbatch"] = []
+    batch2test = np.array(10**np.linspace(0.1*np.log10(len(wholedataset)), 1*np.log10(len(wholedataset)),20),dtype=np.int32)
+    batch2test = batch2test[batch2test>minbatch]
+    batch2test = batch2test[batch2test<maxbatch]
+
+    for ii in batch2test:
+        time_start = time.time()
+        batchcoord = ii
+        np.random.shuffle(wholedataset)
+        optimizer.zero_grad()  # reset gradients
+
+        # Forward pass:
+        out = nfmodel(coordinates[wholedataset[:batchcoord], :])
+
+        if trainBV:
+            loss = wfamodel.optimizeBlos(params=out, index=wholedataset[:batchcoord],noise=noise)
+
+
+        else:  # train the transverse component
+            loss = wfamodel.optimizeBQU(params=out, index=wholedataset[:batchcoord],noise=noise)
+    
+
+        loss.backward()  # calculate gradients
+        
+        # Add gradient norm:
+        if normgrad:
+            for parameters in nfmodel.parameters():
+                parameters.grad = parameters.grad / (torch.mean(torch.abs(parameters.grad),dim=0) + 1e-9)
+        
+        time_stop = time.time()
+
+        newtime = time_stop-time_start
+        output["factor_size"].append(ii)
+        output["timing_perbatch"].append(newtime/(ii))
+
+    optimal_batchsize = output["factor_size"][np.argmin(output["timing_perbatch"]/output["timing_perbatch"][0])]    
+    plt.plot(output["factor_size"],output["timing_perbatch"]/output["timing_perbatch"][0],'.-')
+    plt.ylabel("Time per batch [s]")
+    plt.xlabel("Batch size")
+    plt.axvline(optimal_batchsize, ls='--', color='gray')
+    plt.yscale("log")
+    plt.xscale("log")
+    plt.title("Optimal batch size: "+ str(optimal_batchsize))
+    
+    # Move model back to CPU:
+    nfmodel = nfmodel.to('cpu')
+    return
+
+
+# =================================================================
 def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchcoord=2000, trainBV=True, guesshelp=None, guess_regu=0.0, device='cuda',patience=50, normgrad = True, noise=0.0, reguB=None, reguB_weight=0.0, reguBazi=None, reguBazi_weight=0.0):
     """ 
     Train the neural field model using the WFA model as a loss function, including GPU support.
@@ -173,9 +243,10 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
 
     # Move model and coordinates to GPU if available
     nfmodel = nfmodel.to(device)
-    coordinates = torch.tensor(coordinates, dtype=torch.float32).to(device)
+    coordinates = coordinates.clone().detach().float().to(device)
     if guesshelp is not None:
-        guesshelp = torch.tensor(guesshelp, dtype=torch.float32).to(device)
+        guesshelp = guesshelp.clone().detach().float().to(device)
+
     
     optimizer = torch.optim.Adam(nfmodel.parameters(), lr=lrinit)
     wholedataset = np.arange(coordinates.shape[0])
@@ -232,9 +303,6 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
                 loss += reguBazi_weight*torch.mean((sin2phiB - sin2phi_torch[wholedataset[:batchcoord]])**2)
                 loss += reguBazi_weight*torch.mean((cos2phiB - cos2phi_torch[wholedataset[:batchcoord]])**2)
                 
-    
-    
-
         loss.backward()  # calculate gradients
         
         # Add gradient norm:
@@ -257,7 +325,7 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
             print('Learning rate too small. Stopping.')
             break
 
-    output_dict = {'loss': loss_list, 'lr': lr_list}
+    output_dict = {'loss': loss_list, 'lr': lr_list} 
     
     # Move model back to CPU:
     nfmodel = nfmodel.to('cpu')
@@ -265,7 +333,14 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
     return output_dict
 
 
-# ====================================================================
+# =================================================================
+def nume2string(num):
+    """ Convert number to scientific latex mode """
+    mantissa, exp = f"{num:.2e}".split("e")
+    return mantissa+ " \\times 10^{"+str(int(exp))+"}" 
+
+
+# =================================================================
 def plot_loss(output_dict):
     """
     Plot the loss and learning rate during training.
@@ -276,9 +351,9 @@ def plot_loss(output_dict):
     plt.figure()
     plt.plot(output_dict['loss'])
     if len(output_dict['loss'])>1:
-        output_title_latex = r'${:.2e}'.format(output_dict['loss'][-1]).replace('e','\\times 10^{')+'}$'
-        plt.title('Final loss: '+output_title_latex) 
-    plt.xlabel('Iteration')
+        output_title_latex = r'${:}$'.format(nume2string(output_dict['loss'][-1]))
+        plt.title('Final loss: '+output_title_latex, pad=15.0)
+    plt.xlabel('Iterations')
     plt.ylabel('Loss')
     plt.minorticks_on()
     plt.yscale('log')
@@ -294,7 +369,7 @@ def plot_loss(output_dict):
 
 
 
-# ===================================================================
+# =================================================================
 def Trainer_gpu_full(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchcoord=2000, trainBV=True, guesshelp=None, guess_regu=0.0, device='cuda',patience=50, normgrad = True, noise=0.0, reguB=None, reguB_weight=0.0, reguBazi=None, reguBazi_weight=0.0):
     """ 
     Train the neural field model using the WFA model as a loss function.
@@ -312,9 +387,10 @@ def Trainer_gpu_full(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, ba
 
     # Move model and coordinates to GPU if available
     nfmodel = nfmodel.to(device)
-    coordinates = torch.tensor(coordinates, dtype=torch.float32).to(device)
+    coordinates = coordinates.clone().detach().float().to(device)
     if guesshelp is not None:
-        guesshelp = torch.tensor(guesshelp, dtype=torch.float32).to(device)
+        guesshelp = guesshelp.clone().detach().float().to(device)
+
     
     optimizer = torch.optim.Adam(nfmodel.parameters(), lr=lrinit)
     wholedataset = np.arange(coordinates.shape[0])

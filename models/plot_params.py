@@ -76,7 +76,6 @@ params = {
 'boxplot.whiskers': 1.5,
 'contour.corner_mask': True,
 'contour.negative_linestyle': 'dashed',
-# 'datapath': '/Users/smsharma/anaconda3/lib/python3.7/site-packages/matplotlib/mpl-data',
 'date.autoformatter.day': '%Y-%m-%d',
 'date.autoformatter.hour': '%m-%d %H',
 'date.autoformatter.microsecond': '%M:%S.%f',
@@ -270,12 +269,12 @@ params = {
 'xtick.labeltop': False,
 'xtick.major.bottom': True,
 'xtick.major.pad': 6.0,
-'xtick.major.size': 7.0,
+'xtick.major.size': 14.0,
 'xtick.major.top': True,
 'xtick.major.width': 1.0,
 'xtick.minor.bottom': True,
 'xtick.minor.pad': 3.4,
-'xtick.minor.size': 3.0,
+'xtick.minor.size': 6.0,
 'xtick.minor.top': True,
 'xtick.minor.visible': True,
 'xtick.minor.width': 0.8,
@@ -290,16 +289,15 @@ params = {
 'ytick.major.left': True,
 'ytick.major.pad': 6.0,
 'ytick.major.right': True,
-'ytick.major.size': 7.0,
+'ytick.major.size': 14.0,
 'ytick.major.width': 1.0,
 'ytick.minor.left': True,
 'ytick.minor.pad': 3.4,
 'ytick.minor.right': True,
-'ytick.minor.size': 3.0,
+'ytick.minor.size': 6.0,
 'ytick.minor.visible': True,
 'ytick.minor.width': 0.8,
 'ytick.right': True,
-
 "text.usetex": True,
 "text.latex.preamble": r"\usepackage[T1]{fontenc} \usepackage{newcent} \boldmath", #\usepackage{mathptmx}", # \usepackage{concrete}",
 # 'font.stretch': 'ultra-condensed', 
@@ -312,3 +310,16 @@ params = {
 'ytick.direction': 'inout',
 'lines.solid_capstyle': 'round',
 }
+
+def set_params():
+    """
+    Set the default plotting parameters
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.pylab as pylab
+    from models.plot_params import params
+
+    plt.show() # This is necessary to avoid a bug in matplotlib
+    default_params = plt.rcParams.copy()
+    pylab.rcParams.update(params)
+    return
