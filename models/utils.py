@@ -5,6 +5,80 @@ import astropy.io.fits as fits
 import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from einops import rearrange
+
+
+import torch
+import subprocess
+
+def get_free_gpu():
+    """
+    Selects the GPU with the most free memory using nvidia-smi.
+
+    Returns:
+        torch.device: The selected GPU device or CPU if no GPU is available.
+    """
+    try:
+        # Execute nvidia-smi command to get GPU memory info
+        result = subprocess.check_output(
+            [
+                'nvidia-smi',
+                '--query-gpu=index,memory.free',
+                '--format=csv,nounits,noheader'
+            ]
+        )
+        gpu_info = result.decode('utf-8').strip().split('\n')
+
+        # Parse the GPU information
+        gpus = []
+        for info in gpu_info:
+            idx, free = map(int, info.split(','))
+            gpus.append((idx, free))
+
+        if not gpus:
+            print("No GPU found. Using CPU instead.")
+            return torch.device("cpu")
+
+        # Select GPU with the most free memory
+        selected_gpu = max(gpus, key=lambda x: x[1])[0]
+        selected_free_memory = max(gpus, key=lambda x: x[1])[1]
+        print(f"Selected GPU {selected_gpu} with {selected_free_memory} MiB free memory.")
+        
+        return torch.device(f"cuda:{selected_gpu}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing nvidia-smi: {e}. Using CPU instead.")
+        return torch.device("cpu")
+    except FileNotFoundError:
+        print("nvidia-smi not found. Ensure NVIDIA drivers are installed. Using CPU instead.")
+        return torch.device("cpu")
+    except Exception as e:
+        print(f"Unexpected error: {e}. Using CPU instead.")
+        return torch.device("cpu")
+
+
+# ====================================================================
+def retrieve_index(coordinates_org, tt):
+    """
+    Retrieve the indices of the coordinates being evaluated.
+
+    Args:
+        coordinates (numpy.ndarray): The original coordinates array.
+        tt (int): The time step or index to evaluate.
+
+    Returns:
+        numpy.ndarray: A matrix of indices corresponding to the evaluated coordinates.
+    """
+    # Generate a matrix of indices for the entire coordinates array
+    indices = np.arange(coordinates_org[...,0].detach().numpy().size).reshape(coordinates_org[...,0].detach().numpy().shape)
+    
+    # Extract the indices for the given time step tt
+    indices_tt = indices[tt, :, :]
+    
+    # Rearrange the indices to match the shape (ny * nx)
+    indices_tt = rearrange(indices_tt, 'ny nx -> (ny nx)')
+    
+    return np.squeeze(indices_tt)
 
 
 # ====================================================================

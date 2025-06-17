@@ -161,6 +161,57 @@ class WFA_model(nn.Module):
 
 
 
+# ====================================================================
+def huber_loss(input, target, delta=1.0):
+    """
+    Computes the Huber loss between `input` and `target`.
+
+    The Huber loss is less sensitive to outliers in data than the squared error loss.
+    It is defined as:
+        L_delta(a) = 0.5 * a^2                  if |a| <= delta
+                    delta * (|a| - 0.5 * delta)  otherwise
+    where a is the difference between `input` and `target`.
+
+    Args:
+        input (Tensor): The input tensor.
+        target (Tensor): The target tensor.
+        delta (float, optional): The threshold at which to change between delta-scaled L1 and L2 loss. Default is 1.0.
+
+    Returns:
+        Tensor: The computed Huber loss.
+    """
+    import torch.nn.functional as F
+    return F.smooth_l1_loss(input, target, reduction='mean', beta=delta)
+
+
+
+
+# ====================================================================
+def cauchy_loss(input, target, c=1.0):
+    """
+    Computes the Cauchy loss between `input` and `target`.
+
+    The Cauchy loss is a robust loss function that is less sensitive to outliers
+    compared to the mean squared error loss. It is defined as:
+    
+        loss = log(1 + (residual / c)^2)
+    
+    where residual is the difference between `input` and `target`., and c is a 
+    scaling parameter.
+
+    Args:
+        input (torch.Tensor): The input tensor.
+        target (torch.Tensor): The target tensor.
+        c (float, optional): The scaling parameter. Default is 1.0.
+
+    Returns:
+        torch.Tensor: The computed Cauchy loss.
+    """
+    residual = input - target
+    loss = torch.log(1 + (residual / c)**2)
+    return torch.mean(loss)
+
+
 
 
 # ====================================================================
@@ -236,7 +287,7 @@ class WFA_model3D(nn.Module):
             return torch.stack((Blos,BtQ,BtU),dim=-1)
 
 
-    def optimizeBlos(self,params, index=None, noise=0.0):
+    def optimizeBlos(self,params, index=None, noise=0.0, average=True):
         Blos = params[:,0]*self.Vnorm
         if self.dIdw.device != params.device:
             self.dIdw = self.dIdw.to(Blos.device)
@@ -248,10 +299,13 @@ class WFA_model3D(nn.Module):
         if noise > 0.0:
             stokesV += torch.randn_like(stokesV)*noise
         
-        return torch.mean(torch.abs(self.data_stokesV[index,:] - stokesV)[:,self.mask]**2.0)
+        if average is True:
+            return cauchy_loss(self.data_stokesV[index, :], stokesV)
+        else:
+            return torch.abs(self.data_stokesV[index,:] - stokesV)[:,self.mask]**2.0
 
 
-    def optimizeBQU(self,params, index=None, noise=0.0):
+    def optimizeBQU(self,params, index=None, noise=0.0, average=True):
         BQ = params[:,0]*self.QUnorm
         BU = params[:,1]*self.QUnorm
         if self.dIdwscl.device != params.device:
@@ -270,8 +324,13 @@ class WFA_model3D(nn.Module):
             stokesQ += torch.randn_like(stokesQ)*noise
             stokesU += torch.randn_like(stokesU)*noise
         
-        return torch.mean(torch.abs(self.data_stokesQ[index,:] - stokesQ)[:,self.mask]**2.0) + \
-            torch.mean(torch.abs(self.data_stokesU[index,:] - stokesU)[:,self.mask]**2.0)
+        if average is True:
+            lossQ = cauchy_loss(self.data_stokesQ[index, :], stokesQ)
+            lossU = cauchy_loss(self.data_stokesU[index, :], stokesU)
+            return lossQ + lossU
+        else:
+            return torch.abs(self.data_stokesQ[index,:] - stokesQ)[:,self.mask]**2.0 + \
+            torch.abs(self.data_stokesU[index,:] - stokesU)[:,self.mask]**2.0
 
 
 
@@ -408,30 +467,64 @@ def polar2bqu(B0,B1,B2):
     return B0, BQ, BU
 
 # ====================================================================
-def bqu2polar(B0,BQ,BU):
+def bqu2polar(B0,BQ,BU, split=True):
     """ Blos, BQ, BU -> Blos, Btr, phiB
     """
     Btr = np.sqrt(np.sqrt(BQ**2 + BU**2))
     phiB = 0.5*np.arctan2(BU,BQ)
     phiB[phiB < 0] += np.pi
-    return B0, Btr, phiB
+    if split:
+        return B0, Btr, phiB
+    else:
+        return np.stack([B0, Btr, phiB], axis=-1)
 
 
 # ====================================================================
 def bqu2polar_cube(Bcube, split=False):
-    """ Blos, BQ, BU -> Blos, Btr, phiB
+    """
+    Convert Bcube from [Blos, BQ, BU] or [BQ, BU] to [Blos, Btr, phiB] or [Btr, phiB].
+
+    Args:
+        Bcube (numpy.ndarray): Input array with shape (ny, nx, 3) or (ny, nx, 2).
+        split (bool): If True, return separate components. Defaults to False.
+
+    Returns:
+        numpy.ndarray or tuple:
+            - If split is False:
+                - (ny, nx, 3) array for [Blos, Btr, phiB] if input has 3 components.
+                - (ny, nx, 2) array for [Btr, phiB] if input has 2 components.
+            - If split is True:
+                - Tuple of separate components.
     """
     Bcube = Bcube.copy()
-    phiB = 0.5*np.arctan2(Bcube[:,:,2],Bcube[:,:,1])
-    phiB[phiB < 0] += np.pi
-    phiB[phiB > np.pi] -= np.pi
-
-    Bt = np.sqrt(np.sqrt(Bcube[:,:,2]**2.+Bcube[:,:,1]**2))
-    Bcube[:,:,1] = Bt
-    Bcube[:,:,2] = phiB
-    if split is False:
-        return Bcube
+    
+    if Bcube.shape[-1] == 3:
+        Blos, BQ, BU = Bcube[..., 0], Bcube[..., 1], Bcube[..., 2]
+        Btr, phiB = np.sqrt(np.sqrt(BQ**2 + BU**2)), 0.5 * np.arctan2(BU, BQ)
+        phiB[phiB < 0] += np.pi
+        if split:
+            return Blos, Btr, phiB
+        Bcube[..., 1], Bcube[..., 2] = Btr, phiB
+    
+    elif Bcube.shape[-1] == 2:
+        BQ, BU = Bcube[..., 0], Bcube[..., 1]
+        Btr, phiB = np.sqrt(np.sqrt(BQ**2 + BU**2)), 0.5 * np.arctan2(BU, BQ)
+        phiB[phiB < 0] += np.pi
+        if split:
+            return Btr, phiB
+        Bcube[..., 0], Bcube[..., 1] = Btr, phiB
     else:
-        return Bcube[:,:,0], Bcube[:,:,1], Bcube[:,:,2]
+        raise ValueError("Bcube must have either 2 or 3 components in the last dimension.")
+    return Bcube
 
 
+def bqu2polar_(Bqu):
+    """
+    Convert the transverse magnetic field components to polar coordinates.
+    """
+    BQ = Bqu[...,0]
+    BU = Bqu[...,1]
+    Btr = np.sqrt(np.sqrt(BQ**2 + BU**2))
+    phiB = 0.5*np.arctan2(BU,BQ)
+    phiB[phiB < 0] += np.pi
+    return np.stack([Btr,phiB],axis=-1)

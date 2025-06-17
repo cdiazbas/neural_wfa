@@ -72,7 +72,6 @@ class temporal_mlp(nn.Module):
             x = self.activation(self.beta0*self.first(xx_spatial))
 
         for i in range(self.num_resnet_blocks):
-            # print(beta.shape,beta[:,i].shape,self.resblocks[i][0](x).shape)
             z = self.activation(beta[:,i]+self.resblocks[i][0](x))
 
             for j in range(1, self.num_layers_per_block):
@@ -80,6 +79,42 @@ class temporal_mlp(nn.Module):
             x = z + x
         out = self.last(x)
         return out
+
+
+
+# ===================================================================
+class mlp_temporal0(nn.Module):
+    """
+    DenseNet mlp where the output is f(x,y) + g(x,y,t)
+    """
+    def __init__(self, dim_in=3, dim_out=1, num_resnet_blocks=3,
+                num_layers_per_block=2, dim_hidden=50, activation=nn.GELU(),
+                fourier_features=False, m_freqs=100, sigma=10, tune_beta=False):
+        super(mlp_temporal0, self).__init__()
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.num_resnet_blocks = num_resnet_blocks
+        self.num_layers_per_block = num_layers_per_block
+        self.dim_hidden = dim_hidden
+        self.activation = activation
+        self.fourier_features = fourier_features
+        self.m_freqs = m_freqs
+        self.sigma = sigma
+        self.tune_beta = tune_beta
+        self.mlp = mlp(dim_in=dim_in, dim_out=dim_out, num_resnet_blocks=num_resnet_blocks,
+                num_layers_per_block=num_layers_per_block, dim_hidden=dim_hidden, activation=activation,
+                fourier_features=fourier_features, m_freqs=m_freqs, sigma=sigma, tune_beta=tune_beta)
+
+        self.fxyz = mlp(dim_in=2, dim_out=dim_out, num_resnet_blocks=num_resnet_blocks,
+                num_layers_per_block=num_layers_per_block, dim_hidden=dim_hidden, activation=activation,
+                fourier_features=fourier_features, m_freqs=m_freqs, sigma=sigma[1:], tune_beta=tune_beta)
+        
+    def forward(self, x):
+        x0 = x.clone()
+        x1 = x.clone()[:,1:]
+        xt = x.clone()[:,0:1]
+        return xt*self.mlp(x0) + self.fxyz(x1)
+    
 
 
 # ===================================================================
@@ -166,6 +201,12 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
         device_name = torch.cuda.get_device_name() if torch.cuda.is_available() else 'cpu'
         if device_name != 'cpu':
             print('Using device:',device_name)
+    elif device.startswith('cuda:'):
+        device_index = int(device.split(':')[1])
+        device = torch.device(f"cuda:{device_index}" if torch.cuda.is_available() else "cpu")
+        device_name = torch.cuda.get_device_name(device_index) if torch.cuda.is_available() else 'cpu'
+        if device_name != 'cpu':
+            print('Using device:', device_name)
     else:
         device = "cpu"
 
@@ -250,7 +291,8 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
         loss_list.append(loss.item())
         lr_list.append(optimizer.param_groups[0]['lr'])
 
-        scheduler.step(loss)
+        if patience > 0:
+            scheduler.step(loss)
 
         # If learning rate is too small, stop:
         if optimizer.param_groups[0]['lr'] < 1e-5:
@@ -261,6 +303,7 @@ def Trainer_gpu(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, batchco
     
     # Move model back to CPU:
     nfmodel = nfmodel.to('cpu')
+    torch.cuda.empty_cache()
     
     return output_dict
 
@@ -274,9 +317,18 @@ def plot_loss(output_dict):
 
     # Loss plot:
     plt.figure()
-    plt.plot(output_dict['loss'])
+    plt.plot(output_dict['loss'], alpha=0.5)
+    # Smoothing windows of the 10% of the total number of iterations:
+    savgol_loss = output_dict['loss']
+    if len(output_dict['loss'])>10:
+        window = int(len(output_dict['loss'])/10)
+        from scipy.signal import savgol_filter
+        savgol_loss = savgol_filter(output_dict['loss'], window, 3 if window > 3 else 1)
+        plt.plot(savgol_loss, 'C0-', alpha=0.8)
+        plt.plot(savgol_loss, 'k-', alpha=0.2)
+    
     if len(output_dict['loss'])>1:
-        output_title_latex = r'${:.2e}'.format(output_dict['loss'][-1]).replace('e','\\times 10^{')+'}$'
+        output_title_latex = r'${:.2e}'.format(savgol_loss[-1]).replace('e','\\times 10^{')+'}$'
         plt.title('Final loss: '+output_title_latex) 
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
@@ -305,6 +357,12 @@ def Trainer_gpu_full(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, ba
         device_name = torch.cuda.get_device_name() if torch.cuda.is_available() else 'cpu'
         if device_name != 'cpu':
             print('Using device:',device_name)
+    elif device.startswith('cuda:'):
+        device_index = int(device.split(':')[1])
+        device = torch.device(f"cuda:{device_index}" if torch.cuda.is_available() else "cpu")
+        device_name = torch.cuda.get_device_name(device_index) if torch.cuda.is_available() else 'cpu'
+        if device_name != 'cpu':
+            print('Using device:', device_name)
     else:
         device = "cpu"
 
@@ -388,7 +446,8 @@ def Trainer_gpu_full(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, ba
             loss_list.append(loss.item())
             lr_list.append(optimizer.param_groups[0]['lr'])
 
-        scheduler.step(loss)
+        if patience > 0:
+            scheduler.step(loss)
 
         # If learning rate is too small, stop:
         if optimizer.param_groups[0]['lr'] < 1e-5:
@@ -399,5 +458,6 @@ def Trainer_gpu_full(nfmodel, wfamodel, coordinates, niter=1000, lrinit=1e-3, ba
     
     # Move model back to CPU:
     nfmodel = nfmodel.to('cpu')
+    torch.cuda.empty_cache()
     
     return output_dict
