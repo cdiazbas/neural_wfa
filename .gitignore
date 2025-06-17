@@ -169,3 +169,4 @@ example/plage_sst/._CRISP_5173_plage_dat.fits
 example/plage_sst/._CRISP_5173_plage_wav.fits
 models/._neural_fields.py
 models/._utils.py
+.DS_Store

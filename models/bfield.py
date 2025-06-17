@@ -2,7 +2,7 @@ import numpy as np
 import torch.nn as nn
 import torch
 
-# ====================================================================
+# =================================================================
 class line:
     """
     Class line is used to store the atomic data of spectral lines. We use this
@@ -46,7 +46,7 @@ class line:
             print("line::init: cw={0}, geff={1}, Gg={2}".format(self.cw, self.geff, self.Gg))
 
 
-# ====================================================================
+# =================================================================
 def cder(x, y):
     """
     function cder computes the derivatives of Stokes I (y)
@@ -75,7 +75,7 @@ def cder(x, y):
 
 
 
-# ====================================================================
+# =================================================================
 class WFA_model(nn.Module):
     """ 
     Implements the WFA model by parametrizing the magnetic field as a neural field.
@@ -85,6 +85,7 @@ class WFA_model(nn.Module):
         self.lin = line(spectral_line)
         self.data = torch.from_numpy(np.array(data.astype(np.float32)))
         self.ny, self.nx, self.nStokes, self.nWav = self.data.shape
+        # Wavelength relative to the center of the line
         self.wl = torch.from_numpy(np.array(wl.astype(np.float32)))
         dIdw = cder(wl, self.data)
         dIdw = dIdw.reshape(self.data.shape[0]*self.data.shape[1],dIdw.shape[2])
@@ -100,8 +101,8 @@ class WFA_model(nn.Module):
         self.data_stokesV = self.data[:,:,3,:].reshape(self.data.shape[0]*self.data.shape[1],self.data.shape[3])
         self.C = -4.67e-13 * self.lin.cw**2
         self.dIdwscl = self.dIdw * self.scl
-        self.Vnorm = 1#1000.0
-        self.QUnorm = 1#1000#1e3#1e6
+        self.Vnorm = 1
+        self.QUnorm = 1000
 
     def forward(self, params, index=None):
         Blos = params[:,0]*self.Vnorm
@@ -214,7 +215,7 @@ def cauchy_loss(input, target, c=1.0):
 
 
 
-# ====================================================================
+# =================================================================
 class WFA_model3D(nn.Module):
     """ 
     Implements the WFA model by parametrizing the magnetic field as a neural field.
@@ -224,6 +225,7 @@ class WFA_model3D(nn.Module):
         self.lin = line(spectral_line)
         self.data = torch.from_numpy(np.array(data.astype(np.float32)))
         print('Data:',self.data.shape, 'should be in the format [(nt) ny nx ns nw]')
+        print('Wav:',wl.shape,'should be in Angstroms relative to the center of the line')
         
         from einops import rearrange
         if len(self.data.shape) == 5: # nt ny nx ns nw
@@ -249,8 +251,6 @@ class WFA_model3D(nn.Module):
         self.dIdwscl = self.dIdw * self.scl
         self.Vnorm = 1#1000.0
         self.QUnorm = 1000#1e3#1e6
-        # self.Vnorm = 1000.0
-        # self.QUnorm = 1000000.0
         
     def forward(self, params, index=None):
         Blos = params[:,0]*self.Vnorm
@@ -259,9 +259,9 @@ class WFA_model3D(nn.Module):
         if index is None: index = range(0,len(self.dIdw))
         
         stokesV = self.C * self.lin.geff * Blos[:,None] * self.dIdw[index,:]
-        Clp = 0.75 * self.C**2 * self.lin.Gg * self.dIdwscl[index,:] #Bt[:,None]**2
-        stokesQ = Clp * BQ[:,None] #torch.cos(2*phiB)
-        stokesU = Clp * BU[:,None] #torch.sin(2*phiB)
+        Clp = 0.75 * self.C**2 * self.lin.Gg * self.dIdwscl[index,:]
+        stokesQ = Clp * BQ[:,None]
+        stokesU = Clp * BU[:,None]
         return stokesQ, stokesU, stokesV
 
     def evaluate(self,params,weights=[1.0,1.0,1.0], index=None):
@@ -315,7 +315,7 @@ class WFA_model3D(nn.Module):
             
         
         if index is None: index = range(0,len(self.dIdwscl))
-        Clp = 0.75 * self.C**2 * self.lin.Gg * self.dIdwscl[index,:] #Bt[:,None]**2
+        Clp = 0.75 * self.C**2 * self.lin.Gg * self.dIdwscl[index,:]
         stokesQ = Clp * BQ[:,None]
         stokesU = Clp * BU[:,None]
         
@@ -334,7 +334,7 @@ class WFA_model3D(nn.Module):
 
 
 
-# ====================================================================
+# =================================================================
 def potential_extrapolation(Bz, zz=[0.0], pixel=[0.1,0.1]):
     """
     Computes a potential extrapolation from the observed vertical field.
@@ -412,7 +412,7 @@ def potential_extrapolation(Bz, zz=[0.0], pixel=[0.1,0.1]):
 
 
 
-# ====================================================================
+# =================================================================
 def make_square(Bz_numpy):
     """ Embed the Bz_numpy into a square matrix for the potential extrapolation.
     """
@@ -432,7 +432,7 @@ def make_square(Bz_numpy):
     return Bz_sq
 
 
-# ====================================================================
+# =================================================================
 def embed_potential_extrapolation(Bz_numpy, offset=0.0):
     """ 
     Embed the Bz_numpy into a square matrix, and then apply the potential extrapolation.
@@ -458,7 +458,7 @@ def embed_potential_extrapolation(Bz_numpy, offset=0.0):
 
 
 
-# ====================================================================
+# =================================================================
 def polar2bqu(B0,B1,B2):
     """ Blos, Btr, phiB -> Blos, BQ, BU
     """
@@ -479,7 +479,7 @@ def bqu2polar(B0,BQ,BU, split=True):
         return np.stack([B0, Btr, phiB], axis=-1)
 
 
-# ====================================================================
+# =================================================================
 def bqu2polar_cube(Bcube, split=False):
     """
     Convert Bcube from [Blos, BQ, BU] or [BQ, BU] to [Blos, Btr, phiB] or [Btr, phiB].
