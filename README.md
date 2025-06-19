@@ -3,7 +3,7 @@
 This repository contains the code used to generate the results of the paper "Exploring spectropolarimetric inversions using neural fields: solar chromospheric magnetic field under the weak-field approximation" ([arXiv:2409.05156](https://arxiv.org/abs/2409.05156)).
 
 ![example](docs/sketch_wINRWFA_large.png?raw=true "")
-**Figure 1** — Sketch of the neural field inversion of the magnetic field vector under the weak-field approximation. The neural field is a continuous representation of the magnetic field vector over the spatial and temporal domain. 
+**Figure 1** — Sketch of the neural field inversion of the magnetic field vector under the weak-field approximation. The neural field is a continuous representation of the magnetic field vector over the spatial and temporal domain.
 
 ![example](docs/transverse_comparison.png?raw=true "")
 **Figure 2** — Comparison of the transverse component of the magnetic field vector inferred from a simulated observation at Ca II 8542A using the pixel-wise weak-field approximation (WFA) inversion (middle panel) and the neural field inversion (right panel).
