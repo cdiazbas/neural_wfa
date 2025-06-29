@@ -412,6 +412,29 @@ class WFA_model3D(nn.Module):
                     )
                 )
             )
+    
+    def chi2(self, params, weights=[1.0, 1.0, 1.0], index=None):
+        stokesQ, stokesU, stokesV = self.forward(params, index=index)
+
+        if index is None:
+            index = range(0, len(self.dIdw))
+
+        # Adding a spatial mask
+        return (
+            weights[0]
+            * torch.mean(
+                (self.data_stokesQ[index, :] - stokesQ)[:, self.mask] ** 2.0
+            , axis=1)
+            + weights[1]
+            * torch.mean(
+                (self.data_stokesU[index, :] - stokesU)[:, self.mask] ** 2.0
+            , axis=1)
+            + weights[2]
+            * torch.mean(
+                (self.data_stokesV[index, :] - stokesV)[:, self.mask] ** 2.0
+            , axis=1)
+        )
+
 
     def initial_guess(self, inner=False, split=False):
         Blos = torch.sum(
