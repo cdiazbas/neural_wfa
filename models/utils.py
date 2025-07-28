@@ -6,11 +6,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from einops import rearrange
-
-
 import subprocess
 
-
+# ====================================================================
 def get_free_gpu():
     """
     Selects the GPU with the most free memory using nvidia-smi.
@@ -118,6 +116,18 @@ def print_summary(coordinates, nfmodel):
 # ====================================================================
 # Function to convert a number to a string in scientific notation
 def formatting(value):
+    """
+    Formats a numerical value into a LaTeX-style scientific notation string.
+
+    If the value is zero, returns "0". Otherwise, formats the value in scientific notation
+    with no decimal places and converts the exponent part to LaTeX format (e.g., 1e-05 becomes "1 \times 10^{-5}").
+
+    Args:
+        value (float or int): The numerical value to format.
+
+    Returns:
+        str: The formatted string in LaTeX-style scientific notation, or "0" if the value is zero.
+    """
     formatted_str = "{:.0e}".format(value)
     formatted_str = formatted_str.replace("e-0", " \\times 10^{-")
     formatted_str += "}"
@@ -128,6 +138,22 @@ def formatting(value):
 
 # ====================================================================
 class AttributeDict(dict):
+    """
+    A dictionary subclass that allows attribute-style access to its items.
+
+    This class enables getting and setting dictionary keys as if they were attributes.
+    For example, `d.key` is equivalent to `d['key']`.
+
+    Example:
+        d = AttributeDict(a=1, b=2)
+        print(d.a)      # Outputs: 1
+        d.c = 3
+        print(d['c'])   # Outputs: 3
+
+    Note:
+        - Only keys that are valid Python identifiers can be accessed as attributes.
+        - Attempting to access a missing attribute will raise a KeyError.
+    """
     __slots__ = ()
     __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
@@ -135,86 +161,74 @@ class AttributeDict(dict):
 
 # ====================================================================
 def writefits(name, d):
+    """
+    Writes a NumPy array or data to a FITS file.
+
+    Parameters:
+        name (str): The filename (including path) where the FITS file will be saved.
+        d (array-like): The data to be written to the FITS file.
+
+    Notes:
+        This function overwrites the file if it already exists.
+    """
     io = fits.PrimaryHDU(d)
     io.writeto(name, overwrite=True)
 
-
 # ====================================================================
-def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, **kwargs):
+def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical', **kwargs):
     """
-    Add a vertical color bar to an image plot.
+    Add a color bar to an image plot.
+    
+    Args:
+        im: The image object (result of plt.imshow, etc.)
+        aspect: Aspect ratio of the colorbar
+        pad_fraction: Padding between image and colorbar
+        nbins: Number of ticks on colorbar
+        orientation: 'vertical' or 'horizontal'
+        **kwargs: Additional arguments passed to colorbar
     """
     from mpl_toolkits import axes_grid1
-
-    divider = axes_grid1.make_axes_locatable(im.axes)
-    width = axes_grid1.axes_size.AxesY(im.axes, aspect=1.0 / aspect)
-    pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
-    current_ax = plt.gca()
-    cax = divider.append_axes("right", size=width, pad=pad)
-    plt.sca(current_ax)
     from matplotlib import ticker
 
-    cb = im.axes.figure.colorbar(im, cax=cax, **kwargs)
+    divider = axes_grid1.make_axes_locatable(im.axes)
+    
+    if orientation.lower() == 'horizontal':
+        width = axes_grid1.axes_size.AxesX(im.axes, aspect=aspect)
+        pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
+        current_ax = plt.gca()
+        cax = divider.append_axes("bottom", size=width, pad=pad)
+        plt.sca(current_ax)
+    else:  # vertical (default)
+        width = axes_grid1.axes_size.AxesY(im.axes, aspect=1.0 / aspect)
+        pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
+        current_ax = plt.gca()
+        cax = divider.append_axes("right", size=width, pad=pad)
+        plt.sca(current_ax)
+    
+    cb = im.axes.figure.colorbar(im, cax=cax, orientation=orientation, **kwargs)
     tick_locator = ticker.MaxNLocator(nbins)
     cb.locator = tick_locator
     cb.update_ticks()
     return cb
 
-
 # ====================================================================
-def optimization(optimizer, niterations, parameters, model, xl, img):
-    from tqdm import trange
+def torch2plot(stokes, mymodel):
+    """
+    Converts a PyTorch tensor to a format suitable for plotting.
 
-    t = trange(niterations, leave=True)
-    for loop in t:
-        optimizer.zero_grad()  # reset gradients
-        parameters, final_output = evaluate(parameters, xl, img, model)
+    Args:
+        stokes (torch.Tensor): The tensor to be converted.
+        mymodel: The model containing the spatial dimensions (ny, nx).
 
-        chi2loss = torch.mean(torch.abs(img - final_output))
-        reguloss = (
-            +1e-4 * regu(parameters, 0, img)
-            + 1e-0 * regu2(parameters, 1, img)
-            + 5e-4 * regu_value(parameters, 1, img, 0.014)
-            + 1e-3 * regu(parameters, 2, img)
-        )
-
-        loss = chi2loss + reguloss
-
-        loss.backward()  # calculate gradients
-        optimizer.step()  # step fordward
-
-        t.set_postfix(
-            {
-                "loss": loss.item(),
-                "chi2loss": chi2loss.item(),
-                "reguloss": reguloss.item(),
-            }
-        )
-
-    parameters, final_output = evaluate(parameters, xl, img, model)
-    outplot = parameters.detach().numpy().reshape(img.shape[1], img.shape[2], 3)
-    return outplot, final_output
-
-
-# ====================================================================
-def Gaussian_model(x, params):
-    x = torch.from_numpy(np.array(x.astype(np.float32)))
-    sigma = torch.abs(params[:, 1])
-    return torch.pow(10, params[:, 0]) * torch.exp(
-        -((x - params[:, 2]) ** 2.0) / (2 * (sigma + 1e-6) ** 2.0)
-    )
-
-
-# ====================================================================
-def evaluate(out, xl, img, model):
-    final_output = torch.tensor(())
-    for ii in range(xl.shape[0]):
-        final_output = torch.cat((final_output, model(xl[ii], out)), 0)
-    final_output = torch.reshape(
-        final_output, (img.shape[0], img.shape[1], img.shape[2])
-    )
-    return out, final_output
-
+    Returns:
+        numpy.ndarray: The converted array ready for plotting.
+    """
+    # Convert the tensor to a numpy array and reshape it
+    from einops import rearrange
+    stokes = stokes.detach().cpu().numpy()
+    stokes = rearrange(stokes, "(t y x) nwav -> t y x nwav", t=mymodel.nt, x=mymodel.nx, y=mymodel.ny)
+    return stokes
+    
 
 # ====================================================================
 def regu(out, ii, img):
@@ -389,21 +403,11 @@ def regu2_angle(out, ii, img, plot=False, sine=False):
         plt.savefig("test3.pdf", bbox_inches="tight")
         plt.close(fig)
 
-    # arctan_output_smooth = torch.arctan2(sin_output_smooth,cos_output_smooth)/2.0
-    # arctan_output = torch.arctan2(torch.sin(2*mout[:,:,:,ii]),torch.cos(2*mout[:,:,:,ii]))/2.0
-    # return torch.sum(torch.abs(arctan_output_smooth-arctan_output)**2.0) #+ \
-
     return torch.sum(
         torch.abs(sin_output_smooth - torch.sin(2 * mout[:, :, :, ii])) ** 2.0
     ) + torch.sum(
         torch.abs(cos_output_smooth - torch.cos(2 * mout[:, :, :, ii])) ** 2.0
     )
-
-    # if sine is True:
-    #     return torch.sum(torch.abs(sin_output_smooth-torch.sin(2*mout[:,:,:,ii]))**2.0)
-    # else:
-    #     return torch.sum(torch.abs(cos_output_smooth-torch.cos(2*mout[:,:,:,ii]))**2.0)
-
 
 # ====================================================================
 def regu_mean(out, ii, img):

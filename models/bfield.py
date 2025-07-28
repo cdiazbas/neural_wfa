@@ -414,13 +414,18 @@ class WFA_model3D(nn.Module):
             )
     
     def chi2(self, params, weights=[1.0, 1.0, 1.0], index=None):
+        # if params is not a tensor, convert it to a tensor
+        if not isinstance(params, torch.Tensor):
+            params = torch.tensor(params, dtype=torch.float32)
+        
+        
         stokesQ, stokesU, stokesV = self.forward(params, index=index)
 
         if index is None:
             index = range(0, len(self.dIdw))
 
-        # Adding a spatial mask
-        return (
+        # Using only the index from observed data, and only the values in the mask
+        chi2_map =  (
             weights[0]
             * torch.mean(
                 (self.data_stokesQ[index, :] - stokesQ)[:, self.mask] ** 2.0
@@ -434,6 +439,8 @@ class WFA_model3D(nn.Module):
                 (self.data_stokesV[index, :] - stokesV)[:, self.mask] ** 2.0
             , axis=1)
         )
+        
+        return chi2_map.reshape(self.ny, self.nx, self.nt).detach().cpu().numpy()
 
 
     def initial_guess(self, inner=False, split=False):

@@ -61,6 +61,37 @@ def temporal_regularization(params_time_series):
 
 
 # =================================================================
+def prepare_initial_guess(model):
+    """
+    Prepares the initial guess tensor for model parameters.
+
+    Args:
+        model: The model object, expected to have attributes:
+            - ny (int): Number of pixels in y-direction.
+            - nx (int): Number of pixels in x-direction.
+            - nt (int): Number of time steps.
+            - initial_guess (callable): Function returning initial guesses for Blos, BQ, BU.
+
+    Returns:
+        torch.Tensor: Initial guess tensor of shape (ny * nx * nt, 3), with gradients enabled.
+    """
+    # Allocate tensor for parameters: (ny * nx * nt, 3)
+    out = torch.ones((model.ny * model.nx * model.nt, 3), dtype=torch.float32)
+
+    # Get initial guesses for Blos, BQ, BU (shape: (ny*nx*nt,))
+    B0_exp, BtQ_exp, BtU_exp = model.initial_guess(inner=True, split=True)
+
+    # Normalize and assign to tensor
+    out[:, 0] = B0_exp / 1e3      # Blos
+    out[:, 1] = BtQ_exp / 1e6     # BQ (from Bt and phiB)
+    out[:, 2] = BtU_exp / 1e6     # BU (from Bt and phiB)
+
+    # Enable gradients
+    out.requires_grad = True
+
+    return out
+
+# =================================================================
 def optimization(optimizer, niterations, parameters, model, 
                  reguV=1e-3, reguQU=0.5e-1, reguT_Blos=1e-3, reguT_Bhor=1e-3, reguT_Bazi=1e-3, 
                  weights=[10,10,1], normgrad=False, mask=None):
@@ -129,8 +160,7 @@ def optimization(optimizer, niterations, parameters, model,
         
         optimizer.step()
 
-        # print(total_temporal_loss.item())
-
+        # Update the progress bar with the current loss values
         t.set_postfix({'total': loss.item(), 
                        'chi2': chi2loss.item(), 
                        'spatial': total_spatial_loss.item(),
@@ -141,6 +171,11 @@ def optimization(optimizer, niterations, parameters, model,
     # outplot shape: (ny, nx, nTime, n_model_params)
     outplot = parameters.clone().detach().numpy().reshape(model.ny, model.nx, model.nt, parameters.shape[-1])
     
+    # Revert the normalization in the output parameters:
+    outplot[...,0] *= model.Vnorm  # Blos
+    outplot[...,1] *= model.QUnorm  # BQ
+    outplot[...,2] *= model.QUnorm  # BU
+
     # Calculate Bt and phiB for the output (these are derived from BQ and BU)
     # We need to do this for each time step
     Bt = np.sqrt(np.sqrt(outplot[:,:,:,2]**2. + outplot[:,:,:,1]**2)) # sqrt(sqrt(BU^2 + BQ^2))
@@ -152,5 +187,6 @@ def optimization(optimizer, niterations, parameters, model,
     outplot_final = outplot.copy()
     outplot_final[:,:,:,1] = Bt
     outplot_final[:,:,:,2] = phiB
+    
 
     return outplot_final, parameters 
