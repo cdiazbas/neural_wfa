@@ -7,7 +7,7 @@ from torch.autograd import Variable
 import os, sys
 from tqdm import tqdm, trange
 import astropy.io.fits as fits
-
+from einops import rearrange
 
 # =================================================================
 def spatial_regularization(out_params_flat, param_idx, ny, nx):
@@ -44,20 +44,26 @@ def spatial_regularization(out_params_flat, param_idx, ny, nx):
 
 
 # =================================================================
-def temporal_regularization(params_time_series):
+def temporal_regularization(params_time_series, tweights=None):
     """
     Computes the time-domain regularization.
     Args:
         params_time_series (torch.Tensor): Tensor of shape (n_pixels, n_time) for a single parameter.
+        tweights (torch.Tensor or None): Optional per-timestep weights of shape (1, n_time).
+                                         If provided, weights the temporal differences.
     Returns:
         torch.Tensor: The scalar regularization loss.
     """
     # Calculate difference between consecutive time steps
-    # We penalize the squared difference: (param[t] - param[t-1])^2
-    # torch.diff computes the difference along the last dimension.
-    # It will result in a tensor of shape (n_pixels, n_time - 1)
-    diffs = torch.diff(params_time_series, dim=-1)
-    return torch.sum(torch.abs(diffs)**2.0)
+    diffs = torch.diff(params_time_series, dim=-1)  # (n_pixels, n_time - 1)
+    
+    if tweights is not None:
+        # Weight differences by average of adjacent timestep weights
+        weighted_diffs = diffs * tweights[:, :-1]  # Broadcasting over pixels
+        return torch.sum(weighted_diffs**2.0)
+    else:
+        return torch.sum(diffs**2.0)
+        # return torch.sum(torch.abs(diffs))
 
 
 # =================================================================
@@ -93,13 +99,26 @@ def prepare_initial_guess(model):
 
 # =================================================================
 def optimization(optimizer, niterations, parameters, model, 
-                 reguV=1e-3, reguQU=0.5e-1, reguT_Blos=1e-3, reguT_Bhor=1e-3, reguT_Bazi=1e-3, 
-                 weights=[10,10,1], normgrad=False, mask=None):
+                 reguV=1e-3, reguQU=0.5e-1, reguT_Blos=1e-3, reguT_BQU=1e-3, 
+                 reguMag_Blos=0.0, reguMag_QU=0.0,
+                 weights=[10,10,1], normgrad=False, mask=None, tweights=None):
     # Optimization loop
     
     # Explicit WFA
     model.Vnorm = 1000.0
     model.QUnorm = 1e6
+    
+    
+    # Convert tweights to tensor if provided
+    if tweights is not None:
+        tweights_tensor = torch.as_tensor(tweights, dtype=torch.float32, device=parameters.device)
+        if tweights_tensor.shape[0] != model.nt:
+            raise ValueError(f"tweights length {tweights_tensor.shape[0]} must match nt={model.nt}")
+        # Reshape to (1, nt) for broadcasting with (n_pixels, nt)
+        tweights_tensor = tweights_tensor.view(1, -1)
+    else:
+        tweights_tensor = None
+
     
     # parameters shape: (ny * nx, nTime, n_model_params)
 
@@ -115,7 +134,9 @@ def optimization(optimizer, niterations, parameters, model,
 
         # If there are multiple time steps, we reshape to (ny * nx, nt, n_model_params)
         # This allows us to access each time step's parameters easily
-        params_reshaped = parameters.reshape(model.ny * model.nx, model.nt, -1)
+
+        # Using rearrange if needed:
+        params_reshaped = rearrange(parameters, '(nt ny nx) p -> (ny nx) nt p', ny=model.ny, nx=model.nx, nt=model.nt)
 
         # --- Spatial regularization ---
         total_spatial_loss = torch.tensor(0.0, device=parameters.device)
@@ -139,15 +160,23 @@ def optimization(optimizer, niterations, parameters, model,
             # Slice parameters for temporal regularization: (n_pixels, n_time) for each param
             
             # Blos (index 0)
-            total_temporal_loss += reguT_Blos * temporal_regularization(params_reshaped[:, :, 0])
+            total_temporal_loss += reguT_Blos * temporal_regularization(params_reshaped[:, :, 0],tweights_tensor)
             # BQ (index 1)
-            total_temporal_loss += reguT_Bhor * temporal_regularization(params_reshaped[:, :, 1])
+            total_temporal_loss += reguT_BQU * temporal_regularization(params_reshaped[:, :, 1],tweights_tensor)
             # BU (index 2)
-            total_temporal_loss += reguT_Bazi * temporal_regularization(params_reshaped[:, :, 2])
+            total_temporal_loss += reguT_BQU * temporal_regularization(params_reshaped[:, :, 2],tweights_tensor)
 
+
+        # --- Magnitude regularization (penalizes large parameter values) ---
+        total_magnitude_loss = torch.tensor(0.0, device=parameters.device)
+        if reguMag_Blos > 0:
+            total_magnitude_loss += reguMag_Blos * torch.sum(params_reshaped[:, :, 0]**2)  # BV (Blos)
+        if reguMag_QU > 0:
+            total_magnitude_loss += reguMag_QU * torch.sum(params_reshaped[:, :, 1]**2)  # BQ
+            total_magnitude_loss += reguMag_QU * torch.sum(params_reshaped[:, :, 2]**2)  # BU
 
         # --- Total Loss ---
-        loss = chi2loss + total_spatial_loss + total_temporal_loss
+        loss = chi2loss + total_spatial_loss + total_temporal_loss + total_magnitude_loss
 
         loss.backward()
         
@@ -164,12 +193,15 @@ def optimization(optimizer, niterations, parameters, model,
         t.set_postfix({'total': loss.item(), 
                        'chi2': chi2loss.item(), 
                        'spatial': total_spatial_loss.item(),
-                       'temporal': total_temporal_loss.item()})
+                       'temporal': total_temporal_loss.item(),
+                       'magnitude': total_magnitude_loss.item()})
 
 
     # Reshape the output parameters for plotting and return
     # outplot shape: (ny, nx, nTime, n_model_params)
-    outplot = parameters.clone().detach().numpy().reshape(model.ny, model.nx, model.nt, parameters.shape[-1])
+    outplot = parameters.clone().detach().numpy()
+    # Back to (nt, ny, nx, n_model_params)
+    outplot = rearrange(outplot, '(nt ny nx) p -> nt ny nx p', ny=model.ny, nx=model.nx, nt=model.nt)
     
     # Revert the normalization in the output parameters:
     outplot[...,0] *= model.Vnorm  # Blos
