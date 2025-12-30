@@ -120,130 +120,6 @@ def cder(x, y):
     return yp
 
 
-# =================================================================
-class WFA_model(nn.Module):
-    """
-    Implements the WFA model by parametrizing the magnetic field as a neural
-    field.
-    """
-
-    def __init__(self, data, wl, vdop=0.035, mask=None, spectral_line=8542):
-        super().__init__()
-        self.lin = line(spectral_line)
-        self.data = torch.from_numpy(np.array(data.astype(np.float32)))
-        self.ny, self.nx, self.nStokes, self.nWav = self.data.shape
-        # Wavelength relative to the center of the line
-        self.wl = torch.from_numpy(np.array(wl.astype(np.float32)))
-        dIdw = cder(wl, self.data)
-        dIdw = dIdw.reshape(self.data.shape[0] * self.data.shape[1], dIdw.shape[2])
-        self.dIdw = torch.from_numpy(np.array(dIdw.astype(np.float32)))
-        self.scl = 1.0 / (wl + 1e-9)
-        self.scl[np.abs(wl) <= vdop] = 0.0
-        self.scl = torch.from_numpy(np.array(self.scl.astype(np.float32)))
-        if mask is None:
-            mask = range(self.data.shape[-1])
-        self.mask = mask
-
-        self.data_stokesQ = self.data[:, :, 1, :].reshape(
-            self.data.shape[0] * self.data.shape[1], self.data.shape[3]
-        )
-        self.data_stokesU = self.data[:, :, 2, :].reshape(
-            self.data.shape[0] * self.data.shape[1], self.data.shape[3]
-        )
-        self.data_stokesV = self.data[:, :, 3, :].reshape(
-            self.data.shape[0] * self.data.shape[1], self.data.shape[3]
-        )
-        self.C = -4.67e-13 * self.lin.cw**2
-        self.dIdwscl = self.dIdw * self.scl
-        self.Vnorm = 1
-        self.QUnorm = 1000
-
-    def forward(self, params, index=None):
-        Blos = params[:, 0] * self.Vnorm
-        BQ = params[:, 1] * self.QUnorm
-        BU = params[:, 2] * self.QUnorm
-        if index is None:
-            index = range(0, len(self.dIdw))
-
-        stokesV = self.C * self.lin.geff * Blos[:, None] * self.dIdw[index, :]
-        Clp = 0.75 * self.C**2 * self.lin.Gg * self.dIdwscl[index, :]  # Bt[:,None]**2
-        stokesQ = Clp * BQ[:, None]  # torch.cos(2*phiB)
-        stokesU = Clp * BU[:, None]  # torch.sin(2*phiB)
-        return stokesQ, stokesU, stokesV
-
-    def evaluate(self, params, weights=[1.0, 1.0, 1.0], index=None):
-        stokesQ, stokesU, stokesV = self.forward(params, index=index)
-        if index is None:
-            index = range(0, len(self.dIdw))
-        return (
-            weights[0]
-            * torch.mean(torch.abs(self.data_stokesQ[index, :] - stokesQ)[:, self.mask])
-            + weights[1]
-            * torch.mean(torch.abs(self.data_stokesU[index, :] - stokesU)[:, self.mask])
-            + weights[2]
-            * torch.mean(torch.abs(self.data_stokesV[index, :] - stokesV)[:, self.mask])
-        )
-
-    def initial_guess(self, inner=False, split=False):
-        Blos = torch.sum(
-            self.data_stokesV[:, self.mask] * self.dIdw[:, self.mask], dim=-1
-        ) / (self.C * self.lin.geff * torch.sum(self.dIdw[:, self.mask] ** 2, dim=-1))
-        BtQ = torch.sum(
-            self.data_stokesQ[:, self.mask] * self.dIdwscl[:, self.mask], dim=-1
-        ) / (
-            0.75
-            * self.C**2
-            * self.lin.Gg
-            * torch.sum(self.dIdwscl[:, self.mask] ** 2, dim=-1)
-        )
-        BtU = torch.sum(
-            self.data_stokesU[:, self.mask] * self.dIdwscl[:, self.mask], dim=-1
-        ) / (
-            0.75
-            * self.C**2
-            * self.lin.Gg
-            * torch.sum(self.dIdwscl[:, self.mask] ** 2, dim=-1)
-        )
-        if inner is False:
-            Bt = (BtQ**2 + BtU**2) ** 0.25
-            phiB = 0.5 * torch.arctan2(BtU, BtQ)
-            phiB[phiB < 0] += np.pi
-            if split is False:
-                return torch.stack((Blos, Bt, phiB), dim=-1)
-            else:
-                return (
-                    Blos.reshape(self.nx, self.ny),
-                    Bt.reshape(self.nx, self.ny),
-                    phiB.reshape(self.nx, self.ny),
-                )
-        else:
-            return torch.stack((Blos, BtQ, BtU), dim=-1)
-
-    def optimizeBlos(self, params, index=None):
-        Blos = params[:, 0] * self.Vnorm
-        if index is None:
-            index = range(0, len(self.dIdw))
-        # move dIdw to same device as params:
-        if self.dIdw.device != Blos.device:
-            self.dIdw = self.dIdw.to(Blos.device)
-            self.data_stokesV = self.data_stokesV.to(Blos.device)
-        stokesV = self.C * self.lin.geff * Blos[:, None] * self.dIdw[index, :]
-        return torch.mean(
-            torch.abs(self.data_stokesV[index, :] - stokesV)[:, self.mask]
-        )
-
-    def optimizeBQU(self, params, index=None):
-        BQ = params[:, 0] * self.QUnorm
-        BU = params[:, 1] * self.QUnorm
-        if index is None:
-            index = range(0, len(self.dIdw))
-        Clp = 0.75 * self.C**2 * self.lin.Gg * self.dIdwscl[index, :]  # Bt[:,None]**2
-        stokesQ = Clp * BQ[:, None]
-        stokesU = Clp * BU[:, None]
-        return torch.mean(
-            torch.abs(self.data_stokesQ[index, :] - stokesQ)[:, self.mask]
-        ) + torch.mean(torch.abs(self.data_stokesU[index, :] - stokesU)[:, self.mask])
-
 
 # ====================================================================
 def huber_loss(input, target, delta=1.0, mask=None):
@@ -441,6 +317,41 @@ class WFA_model3D(nn.Module):
         )
         
         return chi2_map.reshape(self.ny, self.nx, self.nt).detach().cpu().numpy()
+    
+    def estimate_uncertainties(self, params, index=None, method='analytical'):
+        """
+        Estimate uncertainties for the WFA model parameters.
+        Delegates to models.uncertainty module.
+        
+        Parameters
+        ----------
+        params : torch.Tensor
+            Parameters tensor of shape (n_pixels, 3) containing [Blos, BQ, BU]
+        index : array-like, optional
+            Indices to use for computation
+        method : str, optional
+            Method to use: 'analytical', 'taylor', or 'pytorch'
+            
+        Returns
+        -------
+        uncertainty_blos : np.ndarray
+        uncertainty_btr : np.ndarray
+        uncertainty_phib : np.ndarray
+        """
+        from models.uncertainty import (
+            estimate_uncertainties_analytical,
+            estimate_uncertainties_taylor,
+            estimate_uncertainties_pytorch
+        )
+        
+        if method == 'analytical':
+            return estimate_uncertainties_analytical(self, params, index=index)
+        elif method == 'taylor':
+            return estimate_uncertainties_taylor(self, params, index=index)
+        elif method == 'pytorch':
+            return estimate_uncertainties_pytorch(self, params, index=index)
+        else:
+            raise ValueError(f"Unknown method: {method}. Use 'analytical', 'taylor', or 'pytorch'")
 
 
     def initial_guess(self, inner=False, split=False):
