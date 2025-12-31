@@ -216,5 +216,6 @@ class NeuralSolver:
                 blos_full, 
                 bqu_full, 
                 w_blos=self.w_blos_norm, 
-                w_bqu=self.w_bqu_norm
+                w_bqu=self.w_bqu_norm,
+                grid_shape=self.problem.obs.grid_shape
             )

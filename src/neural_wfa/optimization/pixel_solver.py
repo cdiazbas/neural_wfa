@@ -18,19 +18,19 @@ class PixelSolver:
     def __init__(
         self,
         problem: WFAProblem,
-        nt: int = 1,
+        nt: int = None,
         device: torch.device = None
     ):
         self.problem = problem
-        self.nt = nt
+        self.nt = nt if nt is not None else problem.nt
         self.device = device if device else problem.device
         
         # Dimensions from observation
-        if len(problem.obs.shape_spatial) == 2:
-            self.ny, self.nx = problem.obs.shape_spatial
+        if len(problem.obs.grid_shape) == 2:
+            self.ny, self.nx = problem.obs.grid_shape
         else:
             self.ny = problem.obs.n_pixels
-            self.nx = 1 # Treat as flat list if not 2D
+            self.nx = 1 # Treat as flat list if not grid
         
         self.n_pixels = self.ny * self.nx
         
@@ -320,4 +320,4 @@ class PixelSolver:
         with torch.no_grad():
            blos_norm = self.params[:, :, 0]
            bqu_packed = torch.stack([self.params[:, :, 1], self.params[:, :, 2]], dim=-1)
-           return MagneticField(blos_norm, bqu_packed, w_blos=self.Vnorm, w_bqu=self.QUnorm)
+           return MagneticField(blos_norm, bqu_packed, w_blos=self.Vnorm, w_bqu=self.QUnorm, grid_shape=self.problem.obs.grid_shape)

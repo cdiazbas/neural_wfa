@@ -18,7 +18,8 @@ class MagneticField:
         blos: torch.Tensor, 
         bqu: torch.Tensor, 
         w_blos: float = 1.0, 
-        w_bqu: float = 1.0
+        w_bqu: float = 1.0,
+        grid_shape: Optional[Tuple[int, ...]] = None
     ):
         """
         Initialize from NORMALIZED network outputs or raw optimized parameters.
@@ -31,6 +32,7 @@ class MagneticField:
         """
         self.w_blos = w_blos
         self.w_bqu = w_bqu
+        self.grid_shape = grid_shape
         
         # Ensure correct shapes
         if blos.dim() == bqu.dim() - 1:
@@ -84,6 +86,40 @@ class MagneticField:
         """Inclination angle (gamma) w.r.t LOS."""
         return torch.atan2(self.btrans, self.blos)
 
+    # --- Reshaped Maps (Convenience) ---
+    
+    def _reshape_to_grid(self, tensor: torch.Tensor) -> torch.Tensor:
+        if self.grid_shape is not None:
+            # Handle cases where tensor might be (N, T) but grid_shape is (Ny, Nx)
+            # or (N,) vs (Nt, Ny, Nx). 
+            # The flattened size must match.
+            if tensor.numel() == np.prod(self.grid_shape):
+                return tensor.reshape(*self.grid_shape)
+        return tensor
+
+    @property
+    def blos_map(self) -> torch.Tensor:
+        """Longitudinal field reshaped to grid orientation (space or time+space)."""
+        return self._reshape_to_grid(self.blos)
+
+    @property
+    def btrans_map(self) -> torch.Tensor:
+        """Transverse field magnitude reshaped to grid orientation."""
+        return self._reshape_to_grid(self.btrans)
+
+    @property
+    def phi_map(self) -> torch.Tensor:
+        """Azimuth reshaped to grid orientation."""
+        return self._reshape_to_grid(self.phi)
+    
+    @property
+    def b_q_map(self) -> torch.Tensor:
+        return self._reshape_to_grid(self.b_q)
+
+    @property
+    def b_u_map(self) -> torch.Tensor:
+        return self._reshape_to_grid(self.b_u)
+
     # --- Derived Cartesian Components (Local Solar Frame) ---
     # Assuming LOS is z-axis
     
@@ -110,7 +146,8 @@ class MagneticField:
             self._blos_norm.to(device),
             self._bqu_norm.to(device),
             self.w_blos,
-            self.w_bqu
+            self.w_bqu,
+            self.grid_shape
         )
         
     def detach(self):
@@ -119,7 +156,8 @@ class MagneticField:
             self._blos_norm.detach(),
             self._bqu_norm.detach(),
             self.w_blos,
-            self.w_bqu
+            self.w_bqu,
+            self.grid_shape
         )
         
     def clone(self):
@@ -127,7 +165,8 @@ class MagneticField:
             self._blos_norm.clone(),
             self._bqu_norm.clone(),
             self.w_blos,
-            self.w_bqu
+            self.w_bqu,
+            self.grid_shape
         )
         
         self._blos_norm.requires_grad_(requires_grad)
@@ -183,7 +222,8 @@ class MagneticField:
         btrans: torch.Tensor, 
         phi: torch.Tensor, 
         w_blos: float = 1.0, 
-        w_bqu: float = 1.0
+        w_bqu: float = 1.0,
+        grid_shape: Optional[Tuple[int, ...]] = None
     ) -> 'MagneticField':
         """Create MagneticField from physical Blos, Btrans, Phi."""
         blos_p, bq_p, bu_p = cls.polar2bqu(blos, btrans, phi)
@@ -192,7 +232,7 @@ class MagneticField:
         norm_blos = blos_p / w_blos
         norm_bqu = torch.stack([bq_p / w_bqu, bu_p / w_bqu], dim=-1)
         
-        return cls(norm_blos, norm_bqu, w_blos, w_bqu)
+        return cls(norm_blos, norm_bqu, w_blos, w_bqu, grid_shape)
 
     @classmethod
     def from_bqu(
@@ -201,9 +241,10 @@ class MagneticField:
         bq: torch.Tensor, 
         bu: torch.Tensor, 
         w_blos: float = 1.0, 
-        w_bqu: float = 1.0
+        w_bqu: float = 1.0,
+        grid_shape: Optional[Tuple[int, ...]] = None
     ) -> 'MagneticField':
         """Create MagneticField from physical Blos, BQ, BU."""
         norm_blos = blos / w_blos
         norm_bqu = torch.stack([bq / w_bqu, bu / w_bqu], dim=-1)
-        return cls(norm_blos, norm_bqu, w_blos, w_bqu)
+        return cls(norm_blos, norm_bqu, w_blos, w_bqu, grid_shape)

@@ -37,9 +37,25 @@ class Observation:
         self.wavelengths = wavelengths.to(device)
         self.device = device
         
-        # Determine spatial dimensions
-        self.shape_spatial = self.data.shape[:-2] # Everything before (4, n_lambda)
+        # Determine spatial/temporal dimensions
+        self.grid_shape = self.data.shape[:-2] # Everything before (4, n_lambda)
         self.n_stokes, self.n_lambda = self.data.shape[-2:]
+        
+        # Automatic nt detection:
+        # If grid_shape is (nt, ny, nx), nt is grid_shape[0]
+        # If grid_shape is (ny, nx), nt is 1
+        if len(self.grid_shape) == 3:
+            self.nt = self.grid_shape[0]
+            self.ny = self.grid_shape[1]
+            self.nx = self.grid_shape[2]
+        elif len(self.grid_shape) == 2:
+            self.nt = 1
+            self.ny = self.grid_shape[0]
+            self.nx = self.grid_shape[1]
+        else:
+            self.nt = 1
+            self.ny = self.n_pixels
+            self.nx = 1
         
         # Flatten spatial dimensions for easier processing (N_pixels, 4, n_lambda)
         self.flat_data = self.data.reshape(-1, self.n_stokes, self.n_lambda)
@@ -97,10 +113,10 @@ class Observation:
         Generates normalized coordinates in range [-1, 1] for each pixel.
         Returns tensor of shape (N_pixels, 2) [y, x].
         """
-        if len(self.shape_spatial) != 2:
+        if len(self.grid_shape) != 2:
             return torch.linspace(-1, 1, self.n_pixels, device=self.device).unsqueeze(-1)
             
-        ny, nx = self.shape_spatial
+        ny, nx = self.grid_shape
         y = torch.linspace(-1, 1, ny, device=self.device)
         x = torch.linspace(-1, 1, nx, device=self.device)
         grid_y, grid_x = torch.meshgrid(y, x, indexing='ij')

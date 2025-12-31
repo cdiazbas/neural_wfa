@@ -176,10 +176,10 @@ plt.show()
 
 final_field = solver.get_full_field()
 
-# 1. Magnetic Field Maps
-blos_map = final_field.blos.detach().cpu().numpy().reshape(ny, nx)
-btrans_map = final_field.btrans.detach().cpu().numpy().reshape(ny, nx)
-azi_map = final_field.phi.detach().cpu().numpy().reshape(ny, nx)
+# 1. Magnetic Field Maps (Using new convenience properties)
+blos_map = final_field.blos_map.detach().cpu().numpy()
+btrans_map = final_field.btrans_map.detach().cpu().numpy()
+azi_map = final_field.phi_map.detach().cpu().numpy()
 
 # Fix azimuth range for plotting if needed (Legacy uses 0 to Pi? or standard -Pi to Pi)
 # Legacy Bazi has vmax=np.pi, vmin=0

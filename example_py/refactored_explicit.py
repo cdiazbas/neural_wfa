@@ -76,8 +76,8 @@ problem = WFAProblem(obs, lin, weights=[10, 10, 10], mask=torch.tensor([5, 6, 7]
 
 
 # Initialize Solver
-solver = PixelSolver(problem, nt=1, device=device)
-
+solver = PixelSolver(problem, device=device)
+    
 # Initialize Parameters using Weak Field Approximation (Much faster convergence)
 solver.initialize_parameters(method='weak_field')
 
@@ -85,11 +85,10 @@ solver.initialize_parameters(method='weak_field')
 # --- Plot Initial Guess (WFA) ---
 print("Plotting Initial Guess (WFA)...")
 initial_field = solver.get_field()
-blos_0 = initial_field.blos.detach().cpu().numpy().reshape(ny, nx)
-bq_0 = initial_field.b_q.detach().cpu().numpy().reshape(ny, nx)
-bu_0 = initial_field.b_u.detach().cpu().numpy().reshape(ny, nx)
-btrans_0 = np.sqrt(np.sqrt(bq_0**2 + bu_0**2))
-azi_0 = 0.5 * np.arctan2(bu_0, bq_0)
+# Using new convenience properties (automatically reshaped)
+blos_0 = initial_field.blos_map.detach().cpu().numpy()
+btrans_0 = initial_field.btrans_map.detach().cpu().numpy()
+azi_0 = initial_field.phi_map.detach().cpu().numpy()
 azi_0[azi_0 < 0] += np.pi
 
 # Legacy Style Plot
@@ -134,11 +133,9 @@ solver.solve(
 final_field = solver.get_field()
 
 # 1. Magnetic Field Maps
-blos_map = final_field.blos.detach().cpu().numpy().reshape(ny, nx)
-bq_map = final_field.b_q.detach().cpu().numpy().reshape(ny, nx)
-bu_map = final_field.b_u.detach().cpu().numpy().reshape(ny, nx)
-btrans_map = np.sqrt(np.sqrt(bq_map**2 + bu_map**2))
-azi_map = 0.5 * np.arctan2(bu_map, bq_map)
+blos_map = final_field.blos_map.detach().cpu().numpy()
+btrans_map = final_field.btrans_map.detach().cpu().numpy()
+azi_map = final_field.phi_map.detach().cpu().numpy()
 azi_map[azi_map < 0] += np.pi
 
 # Legacy Style Plot

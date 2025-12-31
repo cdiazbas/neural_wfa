@@ -23,6 +23,7 @@ class WFAProblem:
         self.obs = observation
         self.lin = line_info
         self.device = device if device else observation.device
+        self.nt = getattr(observation, 'nt', 1)
         
         # Move observation to device if not already
         if self.obs.device != self.device:
@@ -174,6 +175,7 @@ class WFAProblem:
             Tuple[Tensor, Tensor, Tensor]: (stokesQ, stokesU, stokesV)
             Shapes are (N_pixels, N_time, N_lambda) or (Batch, N_lambda).
         """
+        
         # Get physical quantities
         Blos = field.blos
         BQ_val = field.b_q 
