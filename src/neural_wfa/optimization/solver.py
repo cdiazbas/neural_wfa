@@ -159,8 +159,8 @@ class NeuralSolver:
                 # Calculate Loss
                 loss = self.problem.compute_loss(
                     field, 
-                    mask_blos=optimize_blos, 
-                    mask_bqu=optimize_bqu,
+                    active_blos=optimize_blos, 
+                    active_bqu=optimize_bqu,
                     indices=idx 
                 )
                 

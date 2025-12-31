@@ -16,7 +16,7 @@ class WFAProblem:
         self, 
         observation: Observation, 
         line_info: LineInfo, 
-        mask: torch.Tensor = None,
+        active_wav_idx: torch.Tensor = None,
         weights: list = [1.0, 1.0, 1.0], # Weights for [Q, U, V]
         device: torch.device = None
     ):
@@ -32,19 +32,14 @@ class WFAProblem:
         # Weights for loss function
         self.weights = torch.tensor(weights, device=self.device, dtype=torch.float32)
         
-        # Spatial mask (optional) - Shape (N_pixels,) or broadcastable
-        self.mask = mask.to(self.device) if mask is not None else None
+        # Active spectral indices (from Obs or overridden)
+        self.active_wav_idx = active_wav_idx.to(self.device) if active_wav_idx is not None else self.obs.active_wav_idx
         
         # Precompute derivatives dI/dlambda
         self._compute_derivatives()
         
         # Physical constants
         # C = -4.67e-13 * lambda0^2 (in Angstrom)
-        # Note: LineInfo.larm is 4.668...e-13.
-        # Legacy code uses -4.67e-13 explicitly in WFA_model3D. 
-        # Let's use the legacy constant to ensure exact numerical match for now, 
-        # or stick to LineInfo.larm if we want consistency.
-        # Legacy: self.C = -4.67e-13 * self.lin.cw**2
         self.C = -4.67e-13 * (self.lin.cw**2)
         
     def compute_initial_guess(self, indices=None):
@@ -62,32 +57,23 @@ class WFAProblem:
             stokesV = self.obs.stokes_V
             dIdw = self.dIdw
             dIdwscl = self.dIdwscl
-            mask = self.mask
+            active_idx = self.active_wav_idx
         else:
             stokesQ = self.obs.stokes_Q[indices]
             stokesU = self.obs.stokes_U[indices]
             stokesV = self.obs.stokes_V[indices]
             dIdw = self.dIdw[indices]
             dIdwscl = self.dIdwscl[indices]
-            mask = self.mask
+            active_idx = self.active_wav_idx
 
-        # Broadcast if needed (N, N_lambda) vs (N_pixels, N_time, N_lambda) logic
-        # For initial guess, we usually assume single time or treat Time as batch.
-        # But stokes* might be (N, T, L) or (N, L).
-        # We perform sum over Lambda.
-        
         # dIdw is usually (N, L). If obs is (N, T, L), we broadcast dIdw.
         if stokesV.ndim == 3 and dIdw.ndim == 2:
              dIdw = dIdw.unsqueeze(1)
              dIdwscl = dIdwscl.unsqueeze(1)
 
-        # Apply mask
-        idx_mask = mask if mask is not None else slice(None)
-        
-        # Helper to sum over last dim (wavelength)
-        # Helper to sum over last dim (wavelength) with explicit slicing
-        # wsum(x) replaced by direct op for clarity/parity
-        
+        # Apply active indices
+        idx_mask = active_idx if active_idx is not None else slice(None)
+                
         # Blos = Sum(V * dI) / (C * geff * Sum(dI^2))
         sliced_V = stokesV[..., idx_mask]
         sliced_dIdw = dIdw[..., idx_mask]
@@ -126,21 +112,9 @@ class WFAProblem:
         stokes_I = self.obs.stokes_I
         wavs = self.obs.wavelengths
         
-        # cder expects numpy arrays on CPU usually? Let's check cder implementation.
-        # My cder implementation uses numpy operations.
-        # So we need to move to cpu/numpy, calculate, then move back.
-        
         stokes_I_np = stokes_I.detach().cpu().numpy()
         wavs_np = wavs.detach().cpu().numpy()
-        
-        # cder supports 4D input or requires adaptation.
-        # My cder implementation:
-        # N1, N2, nstokes, nlam = y.shape
-        # Input y should be (1, N_pixels, 1, N_lambda) to differentiate just I?
-        # Or I can pass full stokes (1, N_pixels, 4, N_lambda).
-        # Let's pass full stokes for compatibility with current cder signature.
-        
-        # Reshape flat data to (1, N_pixels, 4, N_lambda)
+                
         # Obs.flat_data is (N_pixels, 4, N_lambda)
         full_data_np = self.obs.flat_data.detach().cpu().numpy()[None, ...] # Add dummy dim for N1
         
@@ -191,14 +165,7 @@ class WFAProblem:
             dIdw = self.dIdw
             dIdwscl = self.dIdwscl
             
-        # Handle broadcasting (Time dimension or Batch)
-        # Blos shape could be (N,) or (N, T) or (Batch,)
-        # dIdw shape is (N, L)
-        
-        # If Blos has extra dimension (Time), it is (N, T).
-        # dIdw needs to be (N, 1, L).
-        # We assume 0-th dimension always corresponds to spatial index (pixel or batch index).
-        
+        # We assume 0-th dimension always corresponds to spatial index (pixel or batch index).        
         if Blos.ndim > 1:
             # Assume shape (N, T) -> Unsqueeze dIdw to (N, 1, L)
             dIdw = dIdw.unsqueeze(1)
@@ -225,8 +192,8 @@ class WFAProblem:
     def compute_loss(
         self, 
         field: MagneticField, 
-        mask_blos: bool = True, 
-        mask_bqu: bool = True,
+        active_blos: bool = True, 
+        active_bqu: bool = True,
         indices: torch.Tensor = None,
         spatial_weights: torch.Tensor = None
     ) -> torch.Tensor:
@@ -235,8 +202,8 @@ class WFAProblem:
         
         Args:
             field (MagneticField): Current field estimate (Batch or Full).
-            mask_blos (bool): If False, zeros out Blos contribution.
-            mask_bqu (bool): If False, zeros out BQ/U contribution.
+            active_blos (bool): If False, zeros out Blos contribution.
+            active_bqu (bool): If False, zeros out BQ/U contribution.
             indices (torch.Tensor): Indices of pixels in the batch. 
             spatial_weights (torch.Tensor): Pixel-wise weights (shape (N_batch,) or (N_full,)).
             
@@ -262,46 +229,12 @@ class WFAProblem:
             obs_V = self.obs.stokes_V
             # mask_spat = self.mask
         
-        # Residuals
-        # diffQ = torch.abs(obs_Q - stokesQ_model)
-        # diffU = torch.abs(obs_U - stokesU_model)
-        # diffV = torch.abs(obs_V - stokesV_model)
+        # Use active_wav_idx
+        spectral_indices = self.active_wav_idx if self.active_wav_idx is not None else slice(None)
         
-        # Apply spatial mask
-        # if mask_spat is not None:
-        #     # mask shape (N_pixels, 1) or broadcastable
-        #     diffQ = diffQ * mask_spat
-        #     diffU = diffU * mask_spat
-        #     diffV = diffV * mask_spat
-            
-        # Mean over pixels and wavelengths
-        # lossQ = torch.mean(diffQ) * self.weights[0]
-        # lossU = torch.mean(diffU) * self.weights[1]
-        # lossV = torch.mean(diffV) * self.weights[2]
-        
-        # total_loss = 0.0
-        # if mask_bqu:
-        #     total_loss += lossQ + lossU
-        # if mask_blos:
-        #     total_loss += lossV
-            
-        # return total_loss
-
-        # Apply spectral mask if Obs has it (Obs.mask is wavelength indices)
-        # Obs.Q is already full shape. 
-        # If Obs has self.mask_indices, we should only compute loss on those indices.
-        # For now, simplistic approach: use all wavelengths provided in obs tensors.
-        
-        # Note: The original self.mask is a spatial mask.
-        # The following lines assume self.mask is a spectral mask (wavelength indices).
-        # If self.mask is None, this will cause an error.
-        # If self.mask is a spatial mask, this will cause an error.
-        # Assuming self.mask is intended to be a spectral mask for this section.
-        spectral_mask_for_loss = self.mask if self.mask is not None else slice(None)
-
-        res_V = ((obs_V - stokesV_model)**2)[..., spectral_mask_for_loss]
-        res_Q = ((obs_Q - stokesQ_model)**2)[..., spectral_mask_for_loss]
-        res_U = ((obs_U - stokesU_model)**2)[..., spectral_mask_for_loss]
+        res_V = ((obs_V - stokesV_model)**2)[..., spectral_indices]
+        res_Q = ((obs_Q - stokesQ_model)**2)[..., spectral_indices]
+        res_U = ((obs_U - stokesU_model)**2)[..., spectral_indices]
         
         # Reduced per pixel (mean over wavelengths)
         mse_V = torch.mean(res_V, dim=-1)
@@ -316,9 +249,9 @@ class WFAProblem:
             
         # Final weighted sum
         loss = 0.0
-        if mask_blos:
+        if active_blos:
             loss += self.weights[2] * torch.mean(mse_V)
-        if mask_bqu:
+        if active_bqu:
             loss += self.weights[0] * torch.mean(mse_Q) + self.weights[1] * torch.mean(mse_U)
             
         return loss

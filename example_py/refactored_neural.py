@@ -60,7 +60,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # Observation
-obs = Observation(img, xl, mask=[5, 6, 7], device=str(device))
+obs = Observation(img, xl, active_wav_idx=[5, 6, 7], device=str(device))
 
 # Line Parameters
 lin = LineInfo(5173)
@@ -68,7 +68,7 @@ lin = LineInfo(5173)
 # WFA Physics Engine
 # WFA Physics Engine
 # Pass mask from obs or explicitly
-problem = WFAProblem(obs, lin, mask=obs.mask, device=device)
+problem = WFAProblem(obs, lin, active_wav_idx=obs.active_wav_idx, device=device)
 
 
 # ## 3. Initialize Neural Fields
@@ -283,7 +283,7 @@ plt.tight_layout(); plt.show()
 print("Computing Baseline WFA (for comparison)...")
 # Using PixelSolver to get WFA guess
 from neural_wfa.optimization import PixelSolver
-solver_wfa = PixelSolver(problem, nt=1, device=device)
+solver_wfa = PixelSolver(problem, device=device)
 solver_wfa.initialize_parameters(method='weak_field')
 wfa_field = solver_wfa.get_field()
 

@@ -223,7 +223,7 @@ class PixelSolver:
                  obs_U = obs_U.unsqueeze(1)
                  obs_V = obs_V.unsqueeze(1)
             
-            mask = self.problem.mask # Spectral indices
+            mask = self.problem.active_wav_idx # Spectral indices
             
             # --- LEGACY PARITY: Use L1 Loss (Mean Absolute Error) ---
             # Legacy evaluate: weights[0]*mean(|dQ|) + weights[1]*mean(|dU|) + weights[2]*mean(|dV|)
@@ -234,8 +234,8 @@ class PixelSolver:
             # "mask: [5, 6, 7] are the indices to use during the optimization" (from run output).
             # This is SPATIAL indices.
             # My `self.problem.mask` is SPECTRAL indices in my implementation?
-            # Let's check `WFAProblem`. `self.mask = mask`
-            # In `profile_solver.py`: `obs = Observation(..., mask=[5,6,7])`. 
+            # Let's check `WFAProblem`. `self.active_wav_idx = mask`
+            # In `profile_solver.py`: `obs = Observation(..., active_wav_idx=[5,6,7])`. 
             # In `run_example_explicit.py`: `mask = [5, 6, 7]`. passed to `WFA_model3D`.
             # `WFA_model3D` uses `self.mask` to slice SPATIALLY.
             # `evaluate` does `mean(abs(diff)[:, self.mask])` -> Selects columns?
@@ -245,7 +245,7 @@ class PixelSolver:
             # But in `forward` indices is `range(0, len(self.dIdw))`. 
             # Actually, `self.mask` in `WFA_model3D` IS SPECTRAL (wavelengths) mask.
             # "mask: [5, 6, 7] are the indices to use during the optimization".
-            # OK, so my `self.problem.mask` is consistent (Spectral).
+            # OK, so my `self.problem.active_wav_idx` is consistent (Spectral).
             
             # Legacy: Mean absolute difference over selected wavelengths.
             diff_V = torch.abs(obs_V - stokesV)[..., mask]

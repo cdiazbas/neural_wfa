@@ -17,14 +17,14 @@ class Observation:
         self,
         data: Union[torch.Tensor, np.ndarray],
         wavelengths: Union[torch.Tensor, np.ndarray],
-        mask: Optional[Union[List[int], torch.Tensor]] = None,
+        active_wav_idx: Optional[Union[List[int], torch.Tensor]] = None,
         device: str = "cpu"
     ):
         """
         Args:
             data: Shape (..., 4, n_lambda). Expected to be [I, Q, U, V].
             wavelengths: Shape (n_lambda,). Angstroms relative to line center.
-            mask: Indices of wavelengths to use for inversion.
+            active_wav_idx: Indices of wavelengths to use for inversion.
             device: 'cpu' or 'cuda'.
         """
         # Convert to Tensor and Device
@@ -61,11 +61,11 @@ class Observation:
         self.flat_data = self.data.reshape(-1, self.n_stokes, self.n_lambda)
         self.n_pixels = self.flat_data.shape[0]
         
-        # Handle Mask
-        if mask is not None:
-            self.mask = torch.tensor(mask, device=device) if not isinstance(mask, torch.Tensor) else mask.to(device)
+        # Handle Active Indexs
+        if active_wav_idx is not None:
+            self.active_wav_idx = torch.tensor(active_wav_idx, device=device) if not isinstance(active_wav_idx, torch.Tensor) else active_wav_idx.to(device)
         else:
-            self.mask = torch.arange(self.n_lambda, device=device)
+            self.active_wav_idx = torch.arange(self.n_lambda, device=device)
             
     @property
     def stokes_I(self):
@@ -84,20 +84,20 @@ class Observation:
         return self.flat_data[:, 3, :]
         
     @property
-    def masked_wavelengths(self):
-        return self.wavelengths[self.mask]
+    def active_wavelengths(self):
+        return self.wavelengths[self.active_wav_idx]
     
     def to(self, device):
         """Move data to device."""
-        if self.mask is not None:
-            mask_list = self.mask.tolist()
+        if self.active_wav_idx is not None:
+            active_list = self.active_wav_idx.tolist()
         else:
-            mask_list = None
+            active_list = None
             
         return Observation(
             self.data.to(device),
             self.wavelengths.to(device),
-            mask_list,
+            active_list,
             device
         )
 
@@ -106,7 +106,7 @@ class Observation:
         # This is tricky because __init__ expects spatial shape.
         # But we can reconstruct.
         subset_data = self.flat_data[idx]
-        return Observation(subset_data, self.wavelengths, self.mask, self.device)
+        return Observation(subset_data, self.wavelengths, self.active_wav_idx, self.device)
 
     def get_coordinates(self) -> torch.Tensor:
         """

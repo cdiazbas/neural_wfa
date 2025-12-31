@@ -59,15 +59,16 @@ device = torch.device("cpu")
 print("Using device:", device)
 
 # Observation
-obs = Observation(img, xl, mask=[5, 6, 7], device=str(device))
+obs = Observation(img, xl, active_wav_idx=[5, 6, 7], device=str(device))
 
 # Line Parameters
 lin = LineInfo(5173)
 
 # WFA Physics Engine
 # Use weights=[10, 10, 10] to match Legacy explicit.optimization CALL in legacy_explicit.py
+# Use weights=[10, 10, 10] to match Legacy explicit.optimization CALL in legacy_explicit.py
 # Pass mask for correct Initial Guess computation
-problem = WFAProblem(obs, lin, weights=[10, 10, 10], mask=torch.tensor([5, 6, 7]), device=device)
+problem = WFAProblem(obs, lin, weights=[10, 10, 10], active_wav_idx=torch.tensor([5, 6, 7]), device=device)
 
 
 # ## 3. Pixel Solver
