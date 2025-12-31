@@ -24,7 +24,7 @@ def estimate_uncertainties_diagonal(
         dIdw = problem.dIdw[indices]
         dIdwscl = problem.dIdwscl[indices]
 
-    mask = problem.mask
+    mask = problem.active_wav_idx
     obs_Q = problem.obs.stokes_Q[idx_op]
     obs_U = problem.obs.stokes_U[idx_op]
     obs_V = problem.obs.stokes_V[idx_op]
@@ -122,7 +122,7 @@ def estimate_uncertainties_pytorch(
     C = problem.C
     geff = problem.lin.geff
     Gg = problem.lin.Gg
-    mask = problem.mask
+    mask = problem.active_wav_idx
 
     def pixel_loss(p_norm, dQ, dU, dV, dIdw, dIdwscl):
         # p_norm: (3,) [Blos, BQ, BU] normalized values

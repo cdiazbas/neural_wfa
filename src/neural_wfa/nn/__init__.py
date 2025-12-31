@@ -1,3 +1,3 @@
-from neural_wfa.nn.mlp import MLP
+from neural_wfa.nn.architectures import MLP, TemporalMLP, AdditiveTemporalMLP
 
 __all__ = ["MLP"]

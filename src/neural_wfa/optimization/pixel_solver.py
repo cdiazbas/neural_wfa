@@ -62,37 +62,12 @@ class PixelSolver:
         self.Vnorm = 1000.0
         self.QUnorm = 1e6
         
+        
         # Kernel for Legacy Spatial Regularization
-        self._spatial_kernel = torch.tensor([[0.5, 1.0, 0.5],
-                                            [1.0, 0.0, 1.0],
-                                            [0.5, 1.0, 0.5]], device=self.device)
-        self._spatial_kernel = self._spatial_kernel / self._spatial_kernel.sum()
-        self._spatial_kernel = self._spatial_kernel.view(1, 1, 3, 3)
+        # self._spatial_kernel logic moved to regularization/spatial.py
 
-    def _spatial_regularization(self, param_2d):
-        """
-        Legacy spatial regularization: Squared diff from weighted neighbor average.
-        param_2d: (1, 1, Ny, Nx) or (Batch, 1, Ny, Nx)
-        """
-        # Padding
-        # ReflectionPad2d(1) handles edges like Legacy
-        from torch.nn.functional import conv2d, pad
-        
-        # Legacy uses nn.ReflectionPad2d(1) -> conv2d(..., padding='valid')
-        # Here we pad manually or use pad
-        padded = pad(param_2d, (1, 1, 1, 1), mode='reflect')
-        output_smooth = conv2d(padded, self._spatial_kernel, padding=0)
-        
-        # Squared difference
-        return torch.sum(torch.abs(output_smooth - param_2d)**2.0)
 
-    def _temporal_regularization(self, params_time_series):
-        """
-        Legacy temporal regularization: Sum of squared diffs.
-        params_time_series: (N_pixels, N_time)
-        """
-        diffs = torch.diff(params_time_series, dim=-1)
-        return torch.sum(torch.abs(diffs)**2.0)
+    # Private regularization methods removed. Using regularization.spatial/temporal instead.
 
     def initialize_parameters(self, method='weak_field'):
         if method == 'zeros':
@@ -282,23 +257,24 @@ class PixelSolver:
                      p_t = params_grid[:, :, t_idx, :]
                      
                      if reguV > 0:
-                         # (1, 1, Ny, Nx)
-                         blos_map = p_t[:, :, 0].unsqueeze(0).unsqueeze(0)
-                         reg_loss += reguV * self._spatial_regularization(blos_map)
+                         # (Ny, Nx) -> (1, 1, Ny, Nx) handled by smoothness_loss if we pass 2D? 
+                         # regularization/spatial.py handles 2D input by adding dims.
+                         blos_map = p_t[:, :, 0]
+                         reg_loss += reguV * smoothness_loss(blos_map, penalty='l2')
                          
                      if reguQU > 0:
-                         bq_map = p_t[:, :, 1].unsqueeze(0).unsqueeze(0)
-                         bu_map = p_t[:, :, 2].unsqueeze(0).unsqueeze(0)
-                         reg_loss += reguQU * self._spatial_regularization(bq_map)
+                         bq_map = p_t[:, :, 1]
+                         bu_map = p_t[:, :, 2]
+                         reg_loss += reguQU * smoothness_loss(bq_map, penalty='l2')
                          # Note: Legacy adds reguQU * regularize(BU) separately. 
                          # And usesSAME coefficient reguQU for both.
-                         reg_loss += reguQU * self._spatial_regularization(bu_map)
+                         reg_loss += reguQU * smoothness_loss(bu_map, penalty='l2')
 
             # Temporal
             if self.nt > 1:
-                if reguT_Blos > 0: reg_loss += reguT_Blos * self._temporal_regularization(self.params[..., 0])
-                if reguT_Bhor > 0: reg_loss += reguT_Bhor * self._temporal_regularization(self.params[..., 1])
-                if reguT_Bazi > 0: reg_loss += reguT_Bazi * self._temporal_regularization(self.params[..., 2])
+                if reguT_Blos > 0: reg_loss += reguT_Blos * temporal_smoothness_loss(self.params[..., 0])
+                if reguT_Bhor > 0: reg_loss += reguT_Bhor * temporal_smoothness_loss(self.params[..., 1])
+                if reguT_Bazi > 0: reg_loss += reguT_Bazi * temporal_smoothness_loss(self.params[..., 2])
 
             total_loss = chi2_loss + reg_loss
             

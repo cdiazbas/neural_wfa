@@ -315,17 +315,44 @@ def set_plot_params(params: dict = None):
 # Alias for legacy compatibility
 set_params = set_plot_params
 
-def add_colorbar(im, aspect=20, pad_fraction=0.5, orientation='vertical', label=None):
+def formatting(value):
     """
-    Adds a colorbar that is perfectly aligned with the image axis.
+    Formats a numerical value into a LaTeX-style scientific notation string.
     """
-    ax = im.axes
-    divider = make_axes_locatable(ax)
-    width = divider.append_axes("right" if orientation == 'vertical' else "bottom", 
-                                size=f"{aspect}%", pad=pad_fraction)
-    cb = plt.colorbar(im, cax=width, orientation=orientation)
-    if label:
-        cb.set_label(label)
+    formatted_str = "{:.0e}".format(value)
+    formatted_str = formatted_str.replace("e-0", " \\times 10^{-")
+    formatted_str += "}"
+    if value == 0:
+        formatted_str = "0"
+    return formatted_str
+
+def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical', **kwargs):
+    """
+    Add a color bar to an image plot.
+    Exact legacy implementation.
+    """
+    from mpl_toolkits import axes_grid1
+    from matplotlib import ticker
+
+    divider = axes_grid1.make_axes_locatable(im.axes)
+    
+    if orientation.lower() == 'horizontal':
+        width = axes_grid1.axes_size.AxesX(im.axes, aspect=1.0/aspect)
+        pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
+        current_ax = plt.gca()
+        cax = divider.append_axes("bottom", size=width, pad=pad)
+        plt.sca(current_ax)
+    else:  # vertical (default)
+        width = axes_grid1.axes_size.AxesY(im.axes, aspect=1.0 / aspect)
+        pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
+        current_ax = plt.gca()
+        cax = divider.append_axes("right", size=width, pad=pad)
+        plt.sca(current_ax)
+    
+    cb = im.axes.figure.colorbar(im, cax=cax, orientation=orientation, **kwargs)
+    tick_locator = ticker.MaxNLocator(nbins)
+    cb.locator = tick_locator
+    cb.update_ticks()
     return cb
 
 def torch2plot(tensor: torch.Tensor, shape=None) -> np.ndarray:
@@ -337,26 +364,199 @@ def torch2plot(tensor: torch.Tensor, shape=None) -> np.ndarray:
         return arr.reshape(shape)
     return arr
 
-def plot_training_progress(loss_history, lr_history=None):
+def plot_loss(output_dict):
     """
-    Plots the training loss curve and learning rate.
+    Plot the loss and learning rate during training.
+    Strict legacy parity.
     """
-    fig, ax1 = plt.subplots(figsize=(8, 5))
+    # Loss plot:
+    plt.figure()
     
-    ax1.plot(loss_history, color='C0', label='Loss')
-    ax1.set_yscale('log')
-    ax1.set_xlabel('Epoch/Iteration')
-    ax1.set_ylabel('Loss', color='C0')
-    ax1.tick_params(axis='y', labelcolor='C0')
-    ax1.grid(True, which="both", ls="-", alpha=0.3)
-    
-    if lr_history:
-        ax2 = ax1.twinx()
-        ax2.plot(lr_history, color='C1', linestyle='--', label='LR')
-        ax2.set_yscale('log')
-        ax2.set_ylabel('Learning Rate', color='C1')
-        ax2.tick_params(axis='y', labelcolor='C1')
-        fig.tight_layout()
+    loss_data = output_dict["loss"]
+    if isinstance(loss_data, list):
+        loss_data = np.array(loss_data)
         
-    plt.title('Training Progress')
-    return fig
+    plt.plot(loss_data, alpha=0.5)
+    
+    # Smoothing windows of the 10% of the total number of iterations:
+    savgol_loss = loss_data
+    if len(loss_data) > 10:
+        window = int(len(loss_data) / 10)
+        from scipy.signal import savgol_filter
+        savgol_loss = savgol_filter(loss_data, window, 3 if window > 3 else 1)
+        plt.plot(savgol_loss, "C0-", alpha=0.8)
+        plt.plot(savgol_loss, "k-", alpha=0.2)
+
+    if len(loss_data) > 1:
+        # Use formatting helper
+        output_title_latex = formatting(loss_data[-1])
+        # Or strict copy from legacy which reimplemented logic inside
+        # Legacy code:
+        # output_title_latex = r"${:.2e}".format(output_dict["loss"][-1]).replace("e", "\\times 10^{") + "}$"
+        # Since I added formatting(), I can use it, but legacy plot_loss implementation actually didn't use formatting() func call, 
+        # it inlined it. "formatting()" func handles "e-0" vs "e". 
+        # Legacy plot_loss handles "e".
+        # Let's stick to strict legacy copy for plot_loss to be safe.
+        output_title_latex = (
+            r"${:.2e}".format(loss_data[-1]).replace("e", "\\times 10^{")
+            + "}$"
+        )
+        plt.title("Final loss: " + output_title_latex)
+        
+    plt.xlabel("Iteration")
+    plt.ylabel("Loss")
+    plt.minorticks_on()
+    plt.yscale("log")
+
+    # Another axis with the lr:
+    if "lr" in output_dict and output_dict["lr"] is not None and len(output_dict["lr"]) > 0:
+        ax2 = plt.gca().twinx()
+        ax2.plot(output_dict["lr"], "k--", alpha=0.5)
+        ax2.set_yscale("log")
+        ax2.set_ylabel("Learning rate")
+
+    return plt.gcf()
+
+# Alias for compatibility if needed (renaming plot_training_progress to plot_loss)
+plot_training_progress = plot_loss
+
+def plot_wfa_results(blos, btrans, phi, save_name=None, show=True):
+    """
+    Plots the Blos, Btrans, and Azimuth maps.
+    """
+    ny, nx = blos.shape
+    fs = (9*1.5, 4.5*1.5)
+    extent = np.float64((0, nx, 0, ny))
+    f, ax = plt.subplots(nrows=1, ncols=3, figsize=fs)
+
+    im0 = ax[0].imshow(blos, vmax=800, vmin=-800, cmap='RdGy', interpolation='nearest', extent=extent)
+    im1 = ax[1].imshow(btrans, vmin=0, vmax=800, cmap='gist_gray', interpolation='nearest', extent=extent)
+    im2 = ax[2].imshow(phi, vmax=np.pi, vmin=0, cmap='twilight', interpolation='nearest', extent=extent)
+
+    names = [r'B$_\parallel$', r'B$_\bot$', r'$\Phi_B$']
+    add_colorbar(im0, orientation='horizontal', label=names[0]+' [G]', pad_fraction=0.17)
+    add_colorbar(im1, orientation='horizontal', label=names[1]+' [G]', pad_fraction=0.17)
+    add_colorbar(im2, orientation='horizontal', label=names[2]+' [rad]', pad_fraction=0.17)
+
+    for ii in range(3):
+        ax[ii].set_xlabel('x [pixels]')
+    ax[0].set_ylabel('y [pixels]')
+    
+    plt.tight_layout()
+    if save_name:
+        plt.savefig(save_name, dpi=300)
+    if show:
+        plt.show()
+
+def plot_stokes_profiles(wav, obs_quv, mod_quv, mask_indices=None, save_name=None, show=True):
+    """
+    Plots Stokes Q, U, V profiles (Observed vs Model).
+    obs_quv: (obs_Q, obs_U, obs_V) tuple of 1D arrays
+    mod_quv: (mod_Q, mod_U, mod_V) tuple of 1D arrays
+    """
+    obs_Q, obs_U, obs_V = obs_quv
+    mod_Q, mod_U, mod_V = mod_quv
+    
+    f, ax = plt.subplots(nrows=1, ncols=3, figsize=(10*1.5, 4))
+    ax = ax.flatten()
+
+    # Q
+    ax[0].plot(wav, mod_Q, label='Stokes Q', color='C0')
+    ax[0].plot(wav, obs_Q, 'k.', label='Stokes Q')
+    ax[0].set_ylabel('Stokes Q [a.u.]')
+
+    # U
+    ax[1].plot(wav, mod_U, label='Stokes U', color='C1')
+    ax[1].plot(wav, obs_U, 'k.', label='Stokes U')
+    ax[1].set_ylabel('Stokes U [a.u.]')
+
+    # V
+    ax[2].plot(wav, mod_V, label='Stokes V', color='C2')
+    ax[2].plot(wav, obs_V, 'k.', label='Stokes V')
+    ax[2].set_xlabel(r"Wavelength")
+    ax[2].set_ylabel('Stokes V [a.u.]')
+
+    if mask_indices is not None:
+        w_min = wav[mask_indices[0]]
+        w_max = wav[mask_indices[-1]]
+        for ii in range(3):
+            ylim = ax[ii].get_ylim()
+            ax[ii].fill_betweenx(
+                ylim, w_min, w_max,
+                color='C4', alpha=0.2,
+                label='Mask used for the estimation',
+            )
+            
+    plt.tight_layout()
+    if save_name:
+        plt.savefig(save_name, dpi=300)
+    if show:
+        plt.show()
+
+def plot_chi2_maps(chi2_q, chi2_u, chi2_v, chi2_total=None, save_name_components=None, save_name_total=None, show=True):
+    """
+    Plots the Chi2 spatial maps (Components and Total).
+    """
+    ny, nx = chi2_q.shape
+    fs = (9*1.5, 7)
+    extent = np.float64((0, nx, 0, ny))
+    f, ax = plt.subplots(nrows=1, ncols=3, figsize=fs, sharex=True, sharey=True)
+    ax = ax.flatten()
+
+    im0 = ax[0].imshow(chi2_q, cmap='magma', interpolation='nearest', extent=extent)
+    im1 = ax[1].imshow(chi2_u, cmap='magma', interpolation='nearest', extent=extent)
+    im2 = ax[2].imshow(chi2_v, cmap='magma', interpolation='nearest', extent=extent)
+
+    names = [r'$\chi^2_Q$', r'$\chi^2_U$', r'$\chi^2_V$']
+    # Use helper-like logic or direct calls
+    add_colorbar(im0, pad_fraction=0.1, label=names[0]+' [a.u.]', orientation='horizontal')
+    add_colorbar(im1, pad_fraction=0.1, label=names[1]+' [a.u.]', orientation='horizontal')
+    add_colorbar(im2, pad_fraction=0.1, label=names[2]+' [a.u.]', orientation='horizontal')
+
+    for ii in range(3):
+        ax[ii].set_xlabel('x [pixels]')
+    ax[0].set_ylabel('y [pixels]')
+    plt.tight_layout()
+    
+    if save_name_components:
+        plt.savefig(save_name_components, dpi=300)
+    if show:
+        plt.show()
+
+    if chi2_total is not None:
+        plt.figure(figsize=(6*1.5, 4*1.5))
+        im = plt.imshow(chi2_total, cmap='magma', interpolation='nearest', extent=extent)
+        plt.colorbar(im, label=r"$\chi^2$ [a.u.]")
+        plt.ylabel('y [pixels]')
+        plt.xlabel('x [pixels]')
+        if save_name_total:
+            plt.savefig(save_name_total, dpi=300)
+        if show:
+            plt.show()
+
+def plot_uncertainties(unc_blos, unc_btrans, unc_phi, save_name=None, show=True):
+    """
+    Plots uncertainty maps.
+    """
+    ny, nx = unc_blos.shape
+    fs = (9*1.5, 4.5*1.5)
+    extent = np.float64((0, nx, 0, ny))
+    f, ax = plt.subplots(nrows=1, ncols=3, figsize=fs)
+
+    im0 = ax[0].imshow(unc_blos, extent=extent, aspect='auto', cmap='gray', vmax=1e2)
+    im1 = ax[1].imshow(unc_btrans, extent=extent, aspect='auto', cmap='gray', vmax=1e3)
+    im2 = ax[2].imshow(unc_phi, extent=extent, aspect='auto', cmap='gray', vmax=3)
+
+    names = [r'$\Delta$ B$_\parallel$', r'$\Delta$ B$_\bot$', r'$\Delta \Phi_B$']
+    add_colorbar(im0, orientation='horizontal', label=names[0]+' [G]', pad_fraction=0.17)
+    add_colorbar(im1, orientation='horizontal', label=names[1]+' [G]', pad_fraction=0.17)
+    add_colorbar(im2, orientation='horizontal', label=names[2]+' [rad]', pad_fraction=0.17)
+
+    for ii in range(3):
+        ax[ii].set_xlabel('x [pixels]')
+    ax[0].set_ylabel('y [pixels]')
+    plt.tight_layout()
+    if save_name:
+        plt.savefig(save_name, dpi=300)
+    if show:
+        plt.show()

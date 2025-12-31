@@ -25,6 +25,7 @@ from neural_wfa.optimization import NeuralSolver
 from neural_wfa.optimization import NeuralSolver
 from neural_wfa.analysis.uncertainty import estimate_uncertainties_diagonal
 from neural_wfa.utils import set_params
+from neural_wfa.utils.viz import plot_wfa_results, plot_stokes_profiles, plot_uncertainties
 
 set_params()
 
@@ -127,45 +128,29 @@ solver.set_normalization(w_blos=1.0, w_bqu=1000.0)
 
 print("Training Phase 1: Blos Only...")
 solver.train(n_epochs=400, optimize_blos=True, optimize_bqu=False)
+loss_blos = np.array(solver.loss_history)
+lr_blos = np.array(solver.lr_history)
+solver.loss_history = [] # Reset for next phase
+solver.lr_history = []
 
 print("Training Phase 2: BQU Only...")
 solver.train(n_epochs=400, optimize_blos=False, optimize_bqu=True)
+loss_bqu = np.array(solver.loss_history)
+lr_bqu = np.array(solver.lr_history)
 
 
 # Plot Loss History (Matching Legacy Style)
-plt.figure()
-loss_history = np.array(solver.loss_history)
-plt.plot(loss_history, alpha=0.5)
+# Plot Loss History (Separated)
+from neural_wfa.utils.viz import plot_loss
 
-# Smoothing (10% window)
-if len(loss_history) > 10:
-    window = int(len(loss_history) / 10)
-    from scipy.signal import savgol_filter
-    savgol_loss = savgol_filter(loss_history, window, 3 if window > 3 else 1)
-    plt.plot(savgol_loss, "C0-", alpha=0.8)
-    plt.plot(savgol_loss, "k-", alpha=0.2)
+# Phase 1
+plot_loss({'loss': loss_blos, 'lr': lr_blos})
+plt.savefig("ref_neural_loss_blos.png", dpi=300)
+plt.show()
 
-if len(loss_history) > 1:
-    output_title_latex = (
-        r"${:.2e}".format(loss_history[-1]).replace("e", "\\times 10^{")
-        + "}$"
-    )
-plt.xlabel("Iteration")
-plt.ylabel("Loss")
-
-# Exact Legacy Title Style
-if len(loss_history) > 1:
-    output_title_latex = (
-        r"${:.2e}".format(loss_history[-1]).replace("e", "\\times 10^{")
-        + "}$"
-    )
-    plt.title("Final loss: " + output_title_latex)
-else:
-    plt.title("Training Loss")
-
-plt.minorticks_on()
-plt.yscale('log')
-plt.savefig("ref_neural_loss.png", dpi=300)
+# Phase 2
+plot_loss({'loss': loss_bqu, 'lr': lr_bqu})
+plt.savefig("ref_neural_loss_bqu.png", dpi=300)
 plt.show()
 
 
@@ -203,29 +188,7 @@ azi_map = final_field.phi_map.detach().cpu().numpy()
 # `legacy_neuralfield.py` line 161: `vmax=np.pi, vmin=0`. Use 0-Pi range.
 azi_map[azi_map < 0] += np.pi
 
-save_name = "ref_neural_results.png"
-fs = (9*1.5, 4.5*1.5)
-f, ax = plt.subplots(nrows=1, ncols=3, figsize=fs)
-extent = np.float64((0, nx, 0, ny))
-
-im0 = ax[0].imshow(blos_map, vmax=800, vmin=-800, cmap="RdGy", interpolation="nearest", extent=extent)
-im1 = ax[1].imshow(btrans_map, vmin=0, vmax=800, cmap="gray", interpolation="nearest", extent=extent)
-im2 = ax[2].imshow(azi_map, vmax=np.pi, vmin=0, cmap="twilight", interpolation="nearest", extent=extent)
-
-names = [r"B$_\parallel$", r"B$_\bot$", r"$\Phi_B$"]
-from neural_wfa.utils.viz import add_colorbar
-add_colorbar(im0, orientation="horizontal", label=names[0] + " [G]", pad_fraction=0.17)
-add_colorbar(im1, orientation="horizontal", label=names[1] + " [G]", pad_fraction=0.17)
-add_colorbar(im2, orientation="horizontal", label=names[2] + " [rad]", pad_fraction=0.17)
-
-for ii in range(1, 3): ax[ii].set_yticklabels([])
-for ii in range(3):
-    ax[ii].set_xlabel("x [pixels]")
-    ax[ii].minorticks_on()
-ax[0].set_ylabel("y [pixels]")
-plt.suptitle("Neural field WFA inversion (Refactored)", fontsize=20)
-plt.savefig(save_name, dpi=300)
-plt.show()
+plot_wfa_results(blos_map, btrans_map, azi_map, save_name="ref_neural_results.png")
 
 # 2. Profile Fitting Check
 # Select a pixel with strong signal
@@ -247,13 +210,12 @@ obs_V = obs.stokes_V[indices].detach().cpu().numpy().flatten()
 mod_Q = stokesQ.detach().cpu().numpy().flatten()
 mod_U = stokesU.detach().cpu().numpy().flatten()
 mod_V = stokesV.detach().cpu().numpy().flatten()
+mod_V = stokesV.detach().cpu().numpy().flatten()
 wav = obs.wavelengths.detach().cpu().numpy()
 
-plt.figure(figsize=(12, 4))
-plt.subplot(131); plt.plot(wav, obs_Q, 'ok', label='Obs'); plt.plot(wav, mod_Q, '-r', label='WFA'); plt.title("Stokes Q"); plt.legend()
-plt.subplot(132); plt.plot(wav, obs_U, 'ok'); plt.plot(wav, mod_U, '-r'); plt.title("Stokes U")
-plt.subplot(133); plt.plot(wav, obs_V, 'ok'); plt.plot(wav, mod_V, '-r'); plt.title("Stokes V")
-plt.tight_layout(); plt.show()
+mask_indices = [5, 6, 7]
+plot_stokes_profiles(wav, (obs_Q, obs_U, obs_V), (mod_Q, mod_U, mod_V), 
+                     mask_indices=mask_indices, save_name='ref_neural_pixel_profiles.png')
 
 # 3. Loss (Chi2) Map (Approximation using full field)
 # 3. Loss (Chi2) Map (Approximation using full field)
@@ -271,12 +233,9 @@ sigma_blos, sigma_btrans, sigma_phi = estimate_uncertainties_diagonal(problem, f
 
 sigma_blos = sigma_blos.reshape(ny, nx)
 sigma_btrans = sigma_btrans.reshape(ny, nx)
+sigma_phi = sigma_phi.reshape(ny, nx)
 
-plt.figure(figsize=(10, 4))
-plt.subplot(121); plt.imshow(sigma_blos, cmap='inferno', origin='lower', vmin=0, vmax=50); plt.title("Sigma Blos [G]"); plt.colorbar()
-plt.subplot(122); plt.imshow(sigma_btrans, cmap='inferno', origin='lower', vmin=0, vmax=200); plt.title("Sigma Btrans [G]"); plt.colorbar()
-plt.savefig("ref_neural_uncertainties.png", dpi=300)
-plt.tight_layout(); plt.show()
+plot_uncertainties(sigma_blos, sigma_btrans, sigma_phi, save_name="ref_neural_uncertainties.png")
 
 
 # 5. Baseline WFA Comparison
@@ -292,18 +251,5 @@ wfa_btrans = wfa_field.btrans.detach().cpu().numpy().reshape(ny, nx) # Uses Corr
 wfa_azi = wfa_field.phi.detach().cpu().numpy().reshape(ny, nx) 
 wfa_azi[wfa_azi < 0] += np.pi # Match legacy range [0, pi]
 
-plt.figure(figsize=(15, 5))
-plt.suptitle("Baseline WFA (Pixel-wise)", fontsize=16)
-plt.subplot(131); plt.imshow(wfa_blos, cmap='RdGy', origin='lower', vmin=-800, vmax=800); plt.title("Blos")
-plt.subplot(132); plt.imshow(wfa_btrans, cmap='gray', origin='lower', vmin=0, vmax=800); plt.title("Btrans")
-plt.subplot(133); plt.imshow(wfa_azi, cmap='twilight', origin='lower', vmin=0, vmax=np.pi); plt.title("Azimuth")
-
-# Exact legacy colorbar style for baseline
-from neural_wfa.utils.viz import add_colorbar
-add_colorbar(plt.subplot(131).images[0], orientation="horizontal", label="Blos [G]", pad_fraction=0.17)
-add_colorbar(plt.subplot(132).images[0], orientation="horizontal", label="Btrans [G]", pad_fraction=0.17)
-add_colorbar(plt.subplot(133).images[0], orientation="horizontal", label="Azi [rad]", pad_fraction=0.17)
-
-plt.savefig("ref_neural_wfa_baseline.png", dpi=300)
-plt.tight_layout(); plt.show()
+plot_wfa_results(wfa_blos, wfa_btrans, wfa_azi, save_name="ref_neural_wfa_baseline.png")
 

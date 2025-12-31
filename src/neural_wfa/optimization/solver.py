@@ -41,6 +41,7 @@ class NeuralSolver:
         self.optimizer_bqu = optim.Adam(self.model_bqu.parameters(), lr=lr)
         
         self.loss_history = []
+        self.lr_history = []
         
         # Wait, check baseline_neural.py:
         # blos = nfmodel_blos(coords) * wfamodel.Vnorm
@@ -200,9 +201,17 @@ class NeuralSolver:
             # Step Schedulers
             if optimize_blos: sched_blos.step(epoch_loss / n_batches)
             if optimize_bqu: sched_bqu.step(epoch_loss / n_batches)
+
+            # Track LR (take first group of active optimizer)
+            current_lr = 0.0
+            if optimize_blos:
+                current_lr = self.optimizer_blos.param_groups[0]['lr']
+            elif optimize_bqu:
+                current_lr = self.optimizer_bqu.param_groups[0]['lr']
+            self.lr_history.append(current_lr)
             
             if verbose:
-                iterator.set_postfix(loss=epoch_loss / n_batches, lr=self.optimizer_blos.param_groups[0]['lr'])
+                iterator.set_postfix(loss=epoch_loss / n_batches, lr=current_lr)
 
     def get_full_field(self) -> MagneticField:
         """Evaluates models on full coordinates and returns MagneticField."""
