@@ -7,7 +7,7 @@ from torch.autograd import Variable
 import os, sys
 from tqdm import tqdm, trange
 import astropy.io.fits as fits
-
+from einops import rearrange
 
 # =================================================================
 def spatial_regularization(out_params_flat, param_idx, ny, nx):
@@ -53,15 +53,13 @@ def temporal_regularization(params_time_series):
         torch.Tensor: The scalar regularization loss.
     """
     # Calculate difference between consecutive time steps
-    # We penalize the squared difference: (param[t] - param[t-1])^2
-    # torch.diff computes the difference along the last dimension.
-    # It will result in a tensor of shape (n_pixels, n_time - 1)
-    diffs = torch.diff(params_time_series, dim=-1)
-    return torch.sum(torch.abs(diffs)**2.0)
+    diffs = torch.diff(params_time_series, dim=-1)  # (n_pixels, n_time - 1)
+    
+    return torch.sum(diffs**2.0)
+    # return torch.sum(torch.abs(diffs))
 
 
-# =================================================================
-def prepare_initial_guess(model):
+def prepare_initial_guess(model, use_temporal_average=False, bad_frames=None):
     """
     Prepares the initial guess tensor for model parameters.
 
@@ -71,6 +69,10 @@ def prepare_initial_guess(model):
             - nx (int): Number of pixels in x-direction.
             - nt (int): Number of time steps.
             - initial_guess (callable): Function returning initial guesses for Blos, BQ, BU.
+        use_temporal_average (bool): If True, compute the temporal average of the initial guess
+                                     and replicate it across all time frames.
+        bad_frames (list or array): List of frame indices to replace with temporal average.
+                                   If provided, only these frames are replaced.
 
     Returns:
         torch.Tensor: Initial guess tensor of shape (ny * nx * nt, 3), with gradients enabled.
@@ -80,6 +82,35 @@ def prepare_initial_guess(model):
 
     # Get initial guesses for Blos, BQ, BU (shape: (ny*nx*nt,))
     B0_exp, BtQ_exp, BtU_exp = model.initial_guess(inner=True, split=True)
+
+    if use_temporal_average or bad_frames is not None:
+        # Reshape to (nt, ny*nx)
+        B0_reshaped = B0_exp.reshape(model.nt, model.ny * model.nx)
+        BQ_reshaped = BtQ_exp.reshape(model.nt, model.ny * model.nx)
+        BU_reshaped = BtU_exp.reshape(model.nt, model.ny * model.nx)
+        
+        # Compute temporal average: (ny*nx,)
+        B0_avg = torch.mean(B0_reshaped, dim=0)
+        BQ_avg = torch.mean(BQ_reshaped, dim=0)
+        BU_avg = torch.mean(BU_reshaped, dim=0)
+        
+        if use_temporal_average:
+            # Replicate across all time frames: (nt, ny*nx) -> (ny*nx*nt,)
+            B0_exp = B0_avg.unsqueeze(0).repeat(model.nt, 1).flatten()
+            BtQ_exp = BQ_avg.unsqueeze(0).repeat(model.nt, 1).flatten()
+            BtU_exp = BU_avg.unsqueeze(0).repeat(model.nt, 1).flatten()
+        elif bad_frames is not None:
+            # Only replace bad frames with average
+            for frame_idx in bad_frames:
+                if 0 <= frame_idx < model.nt:
+                    B0_reshaped[frame_idx, :] = B0_avg
+                    BQ_reshaped[frame_idx, :] = BQ_avg
+                    BU_reshaped[frame_idx, :] = BU_avg
+            
+            # Flatten back to (ny*nx*nt,)
+            B0_exp = B0_reshaped.flatten()
+            BtQ_exp = BQ_reshaped.flatten()
+            BtU_exp = BU_reshaped.flatten()
 
     # Normalize and assign to tensor
     out[:, 0] = B0_exp / 1e3      # Blos
@@ -93,13 +124,26 @@ def prepare_initial_guess(model):
 
 # =================================================================
 def optimization(optimizer, niterations, parameters, model, 
-                 reguV=1e-3, reguQU=0.5e-1, reguT_Blos=1e-3, reguT_Bhor=1e-3, reguT_Bazi=1e-3, 
-                 weights=[10,10,1], normgrad=False, mask=None):
+                 reguV=0.0, reguQU=0.0, reguT_Blos=0.0, reguT_BQU=0.0, 
+                 reguMag_Blos=0.0, reguMag_QU=0.0,
+                 weights=[10,10,1], normgrad=False, mask=None, tweights=None):
     # Optimization loop
     
     # Explicit WFA
     model.Vnorm = 1000.0
     model.QUnorm = 1e6
+    
+    
+    # Convert tweights to tensor if provided
+    if tweights is not None:
+        tweights_tensor = torch.as_tensor(tweights, dtype=torch.float32, device=parameters.device)
+        if tweights_tensor.shape[0] != model.nt:
+            raise ValueError(f"tweights length {tweights_tensor.shape[0]} must match nt={model.nt}")
+        # Reshape to (1, nt) for broadcasting with (n_pixels, nt)
+        tweights_tensor = tweights_tensor.view(1, -1)
+    else:
+        tweights_tensor = None
+
     
     # parameters shape: (ny * nx, nTime, n_model_params)
 
@@ -108,14 +152,16 @@ def optimization(optimizer, niterations, parameters, model,
         optimizer.zero_grad()
 
         # Chi2 loss (fidelity to data)
-        chi2loss = model.evaluate(parameters, weights=weights, spatial_mask=mask)
+        chi2loss = model.evaluate(parameters, weights=weights, spatial_mask=mask, tweights=tweights_tensor)
 
         # Reshape parameters for easier spatial/temporal regularization access
         # (ny * nx, nTime, n_model_params)
 
         # If there are multiple time steps, we reshape to (ny * nx, nt, n_model_params)
         # This allows us to access each time step's parameters easily
-        params_reshaped = parameters.reshape(model.ny * model.nx, model.nt, -1)
+
+        # Using rearrange if needed:
+        params_reshaped = rearrange(parameters, '(nt ny nx) p -> (ny nx) nt p', ny=model.ny, nx=model.nx, nt=model.nt)
 
         # --- Spatial regularization ---
         total_spatial_loss = torch.tensor(0.0, device=parameters.device)
@@ -141,13 +187,21 @@ def optimization(optimizer, niterations, parameters, model,
             # Blos (index 0)
             total_temporal_loss += reguT_Blos * temporal_regularization(params_reshaped[:, :, 0])
             # BQ (index 1)
-            total_temporal_loss += reguT_Bhor * temporal_regularization(params_reshaped[:, :, 1])
+            total_temporal_loss += reguT_BQU * temporal_regularization(params_reshaped[:, :, 1])
             # BU (index 2)
-            total_temporal_loss += reguT_Bazi * temporal_regularization(params_reshaped[:, :, 2])
+            total_temporal_loss += reguT_BQU * temporal_regularization(params_reshaped[:, :, 2])
 
+
+        # --- Magnitude regularization (penalizes large parameter values) ---
+        total_magnitude_loss = torch.tensor(0.0, device=parameters.device)
+        if reguMag_Blos > 0:
+            total_magnitude_loss += reguMag_Blos * torch.sum(params_reshaped[:, :, 0]**2)  # BV (Blos)
+        if reguMag_QU > 0:
+            total_magnitude_loss += reguMag_QU * torch.sum(params_reshaped[:, :, 1]**2)  # BQ
+            total_magnitude_loss += reguMag_QU * torch.sum(params_reshaped[:, :, 2]**2)  # BU
 
         # --- Total Loss ---
-        loss = chi2loss + total_spatial_loss + total_temporal_loss
+        loss = chi2loss + total_spatial_loss + total_temporal_loss + total_magnitude_loss
 
         loss.backward()
         
@@ -164,12 +218,15 @@ def optimization(optimizer, niterations, parameters, model,
         t.set_postfix({'total': loss.item(), 
                        'chi2': chi2loss.item(), 
                        'spatial': total_spatial_loss.item(),
-                       'temporal': total_temporal_loss.item()})
+                       'temporal': total_temporal_loss.item(),
+                       'magnitude': total_magnitude_loss.item()})
 
 
     # Reshape the output parameters for plotting and return
     # outplot shape: (ny, nx, nTime, n_model_params)
-    outplot = parameters.clone().detach().numpy().reshape(model.ny, model.nx, model.nt, parameters.shape[-1])
+    outplot = parameters.clone().detach().numpy()
+    # Back to (nt, ny, nx, n_model_params)
+    outplot = rearrange(outplot, '(nt ny nx) p -> nt ny nx p', ny=model.ny, nx=model.nx, nt=model.nt)
     
     # Revert the normalization in the output parameters:
     outplot[...,0] *= model.Vnorm  # Blos

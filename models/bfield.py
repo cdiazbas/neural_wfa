@@ -91,17 +91,18 @@ class line:
 
 
 # =================================================================
-def cder(x, y):
+def cder_loop(x, y):
     """
+    Original loop-based implementation of cder.
     Function cder computes the derivatives of Stokes I (y)
 
     Input:
-            x: 1D wavelength array
-            y: 4D data array (ny, nx, nStokes, nw)
+            x: 1D wavelength array (numpy array)
+            y: 4D data array (ny, nx, nStokes, nw) (numpy array)
             Use the usual centered derivatives formula for non-equidistant grids.
     """
     ny, nx, nstokes, nlam = y.shape[:]
-    yp = np.zeros((ny, nx, nlam), dtype="float32")
+    yp = np.zeros((ny, nx, nlam), dtype=np.float32)
 
     odx = x[1] - x[0]
     body = (y[:, :, 0, 1] - y[:, :, 0, 0]) / odx
@@ -118,6 +119,79 @@ def cder(x, y):
 
     yp[:, :, -1] = body
     return yp
+
+
+# =================================================================
+def cder_vectorized(x, y):
+    """
+    Vectorized implementation of cder for better performance.
+    Computes the derivatives of Stokes I (y) using NumPy array operations.
+
+    Input:
+            x: 1D wavelength array (can be numpy array or torch tensor)
+            y: 4D data array (ny, nx, nStokes, nw) (can be numpy array or torch tensor)
+            Use the usual centered derivatives formula for non-equidistant grids.
+    """
+    # Convert to numpy if torch tensors
+    if hasattr(x, 'cpu'):  # Check if it's a torch tensor
+        x = x.cpu().numpy()
+    if hasattr(y, 'cpu'):  # Check if it's a torch tensor
+        y = y.cpu().numpy()
+    
+    ny, nx, nstokes, nlam = y.shape[:]
+    yp = np.zeros((ny, nx, nlam), dtype=np.float32)
+    
+    # Extract Stokes I
+    stokes_I = y[:, :, 0, :]
+    
+    # Pre-compute all dx values
+    dx_forward = x[1:] - x[:-1]  # x[i+1] - x[i]
+    
+    # First point (forward difference)
+    yp[:, :, 0] = (stokes_I[:, :, 1] - stokes_I[:, :, 0]) / dx_forward[0]
+    
+    # Interior points (vectorized centered difference)
+    if nlam > 2:
+        dx_back = dx_forward[:-1]     # x[i] - x[i-1]
+        dx_fwd = dx_forward[1:]       # x[i+1] - x[i]
+        
+        dy_back = stokes_I[:, :, 1:-1] - stokes_I[:, :, :-2]  # y[i] - y[i-1]
+        dy_fwd = stokes_I[:, :, 2:] - stokes_I[:, :, 1:-1]    # y[i+1] - y[i]
+        
+        # Weighted average of forward and backward differences
+        yp[:, :, 1:-1] = (dx_back * dy_fwd / dx_fwd + dx_fwd * dy_back / dx_back) / (dx_back + dx_fwd)
+    
+    # Last point (backward difference)
+    yp[:, :, -1] = (stokes_I[:, :, -1] - stokes_I[:, :, -2]) / dx_forward[-1]
+    
+    return yp
+
+
+# =================================================================
+def cder(x, y, method='loop'):
+    """
+    Computes the derivatives of Stokes I (y) with automatic method selection.
+
+    Input:
+            x: 1D wavelength array (can be numpy array or torch tensor)
+            y: 4D data array (ny, nx, nStokes, nw) (can be numpy array or torch tensor)
+            method: 'auto', 'vectorized', or 'loop'
+                   'auto' selects the best method based on data size
+                   'vectorized' uses NumPy array operations (fastest for large arrays)
+                   'loop' uses JIT-compiled loop (can be faster for small arrays if Numba available)
+    """
+
+    if method == 'auto':
+            return cder_vectorized(x, y)  # Pass original to handle conversion internally
+    elif method == 'loop':
+        # Convert to numpy if torch tensors (for method selection and loop version)
+        x_np = x.cpu().numpy() if hasattr(x, 'cpu') else x
+        y_np = y.cpu().numpy() if hasattr(y, 'cpu') else y
+        return cder_loop(x_np, y_np)
+    elif method == 'vectorized':
+        return cder_vectorized(x, y)  # Pass original to handle conversion internally
+    else:
+        raise ValueError(f"Unknown method: {method}. Use 'auto', 'vectorized', or 'loop'.")
 
 
 
@@ -239,55 +313,45 @@ class WFA_model3D(nn.Module):
         stokesU = Clp * BU[:, None]
         return stokesQ, stokesU, stokesV
 
-    def evaluate(self, params, weights=[1.0, 1.0, 1.0], index=None, spatial_mask=None):
+    def evaluate(self, params, weights=[1.0, 1.0, 1.0], index=None, spatial_mask=None, tweights=None):
         stokesQ, stokesU, stokesV = self.forward(params, index=index)
 
         if index is None:
             index = range(0, len(self.dIdw))
 
-        # Adding a spatial mask
-        if spatial_mask is None:
-            return (
-                weights[0]
-                * torch.mean(
-                    torch.abs(self.data_stokesQ[index, :] - stokesQ)[:, self.mask]
-                )
-                + weights[1]
-                * torch.mean(
-                    torch.abs(self.data_stokesU[index, :] - stokesU)[:, self.mask]
-                )
-                + weights[2]
-                * torch.mean(
-                    torch.abs(self.data_stokesV[index, :] - stokesV)[:, self.mask]
-                )
-            )
+        # Calculate residuals per frame: shape (n_pixels, n_wavelengths)
+        residualsQ = torch.abs(self.data_stokesQ[index, :][:, self.mask] - stokesQ[:, self.mask])
+        residualsU = torch.abs(self.data_stokesU[index, :][:, self.mask] - stokesU[:, self.mask])
+        residualsV = torch.abs(self.data_stokesV[index, :][:, self.mask] - stokesV[:, self.mask])
+        
+        # Apply spatial mask if provided
+        if spatial_mask is not None:
+            # spatial_mask shape: (ny*nx*nt,) or needs reshaping
+            residualsQ = spatial_mask[:, None] * residualsQ
+            residualsU = spatial_mask[:, None] * residualsU
+            residualsV = spatial_mask[:, None] * residualsV
+        
+        # Compute chi2 per pixel: shape (n_pixels,)
+        chi2_per_pixel = (
+            weights[0] * torch.mean(residualsQ, dim=1) +
+            weights[1] * torch.mean(residualsU, dim=1) +
+            weights[2] * torch.mean(residualsV, dim=1)
+        )
+        
+        # Apply temporal weights if provided
+        if tweights is not None:
+            # Reshape chi2_per_pixel to (nt*ny*nx,) -> (nt, ny, nx)
+            from einops import rearrange
+            chi2_reshaped = rearrange(chi2_per_pixel, '(nt ny nx) -> nt ny nx', 
+                                    nt=self.nt, ny=self.ny, nx=self.nx)
+            
+            # tweights shape: (nt,) - apply to each frame
+            tweights_expanded = tweights.view(self.nt, 1, 1)
+            chi2_weighted = chi2_reshaped * tweights_expanded
+            
+            return torch.mean(chi2_weighted)
         else:
-            return (
-                weights[0]
-                * torch.mean(
-                    spatial_mask
-                    * torch.mean(
-                        torch.abs(self.data_stokesQ[index, :] - stokesQ)[:, self.mask],
-                        axis=1,
-                    )
-                )
-                + weights[1]
-                * torch.mean(
-                    spatial_mask
-                    * torch.mean(
-                        torch.abs(self.data_stokesU[index, :] - stokesU)[:, self.mask],
-                        axis=1,
-                    )
-                )
-                + weights[2]
-                * torch.mean(
-                    spatial_mask
-                    * torch.mean(
-                        torch.abs(self.data_stokesV[index, :] - stokesV)[:, self.mask],
-                        axis=1,
-                    )
-                )
-            )
+            return torch.mean(chi2_per_pixel)
     
     def chi2(self, params, weights=[1.0, 1.0, 1.0], index=None):
         # if params is not a tensor, convert it to a tensor
@@ -304,16 +368,16 @@ class WFA_model3D(nn.Module):
         chi2_map =  (
             weights[0]
             * torch.mean(
-                (self.data_stokesQ[index, :] - stokesQ)[:, self.mask] ** 2.0
-            , axis=1)
+                (self.data_stokesQ[index, :][:, self.mask] - stokesQ[:, self.mask]) ** 2.0
+            , dim=1)
             + weights[1]
             * torch.mean(
-                (self.data_stokesU[index, :] - stokesU)[:, self.mask] ** 2.0
-            , axis=1)
+                (self.data_stokesU[index, :][:, self.mask] - stokesU[:, self.mask]) ** 2.0
+            , dim=1)
             + weights[2]
             * torch.mean(
-                (self.data_stokesV[index, :] - stokesV)[:, self.mask] ** 2.0
-            , axis=1)
+                (self.data_stokesV[index, :][:, self.mask] - stokesV[:, self.mask]) ** 2.0
+            , dim=1)
         )
         
         return chi2_map.reshape(self.ny, self.nx, self.nt).detach().cpu().numpy()
@@ -404,7 +468,7 @@ class WFA_model3D(nn.Module):
         if average is True:
             return cauchy_loss(self.data_stokesV[index, :], stokesV, mask=self.mask)
         else:
-            return torch.abs(self.data_stokesV[index, :] - stokesV)[:, self.mask] ** 2.0
+            return torch.abs(self.data_stokesV[index, :][:, self.mask] - stokesV[:, self.mask]) ** 2.0
 
     def optimizeBQU(self, params, index=None, noise=0.0, average=True):
         BQ = params[:, 0] * self.QUnorm
@@ -431,8 +495,8 @@ class WFA_model3D(nn.Module):
             return lossQ + lossU
         else:
             return (
-                torch.abs(self.data_stokesQ[index, :] - stokesQ)[:, self.mask] ** 2.0
-                + torch.abs(self.data_stokesU[index, :] - stokesU)[:, self.mask] ** 2.0
+                torch.abs(self.data_stokesQ[index, :][:, self.mask] - stokesQ[:, self.mask]) ** 2.0
+                + torch.abs(self.data_stokesU[index, :][:, self.mask] - stokesU[:, self.mask]) ** 2.0
             )
 
 

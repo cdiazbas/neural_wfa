@@ -1,4 +1,4 @@
-exclude: .*(\.fits|\.fts|\.fit|\.txt|\.csv|\.py)|public/.*$
+exclude: .*(\.fits|\.fts|\.fit|\.txt|\.csv|\.py|\.ipynb)|public/.*$
 repos:
   - repo: https://github.com/PyCQA/docformatter
     rev: v1.7.7

@@ -171,3 +171,8 @@ models/._neural_fields.py
 models/._utils.py
 .DS_Store
 tests/
+example/*npz
+example/*npy
+example/test*
+example/wfa*
+runs/
