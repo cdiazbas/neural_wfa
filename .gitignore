@@ -174,3 +174,4 @@ example/*npz
 example/*npy
 example/test*
 example/wfa*
+runs/
