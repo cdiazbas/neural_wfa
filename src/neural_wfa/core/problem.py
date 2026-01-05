@@ -18,7 +18,8 @@ class WFAProblem:
         line_info: LineInfo, 
         active_wav_idx: torch.Tensor = None,
         weights: list = [1.0, 1.0, 1.0], # Weights for [Q, U, V]
-        device: torch.device = None
+        device: torch.device = None,
+        verbose: bool = True
     ):
         self.obs = observation
         self.lin = line_info
@@ -34,6 +35,17 @@ class WFAProblem:
         
         # Active spectral indices (from Obs or overridden)
         self.active_wav_idx = active_wav_idx.to(self.device) if active_wav_idx is not None else self.obs.active_wav_idx
+
+        if verbose:
+            print(
+                "Data:", self.obs.flat_data.shape, "should be in the format [(nt) ny nx ns nw] (flattened to [N ns nw])"
+            )
+            print(
+                "Wav:",
+                self.obs.wavelengths.shape,
+                "should be in Angstroms relative to the center of the line",
+            )
+            print("mask:", self.active_wav_idx, "are the indices to use during the optimization")
         
         # Precompute derivatives dI/dlambda
         self._compute_derivatives()

@@ -139,8 +139,6 @@ loss_bqu = np.array(solver.loss_history)
 lr_bqu = np.array(solver.lr_history)
 
 
-# Plot Loss History (Matching Legacy Style)
-# Plot Loss History (Separated)
 from neural_wfa.utils.viz import plot_loss
 
 # Phase 1

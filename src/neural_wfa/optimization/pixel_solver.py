@@ -43,23 +43,6 @@ class PixelSolver:
         
         # Normalization constants
         self.Vnorm = 1000.0
-        self.QUnorm = 1000.0 # Legacy used 1000 or 1e6?
-        # explicit.py: model.QUnorm = 1e6. 
-        # But bfield.py WFA_model3D sets QUnorm = 1000 in init?
-        # Let's check Baseline Explicit code.
-        # It calls `model.QUnorm = 1e6` inside `optimization` function? NO.
-        # `models/explicit.py` line 102: `model.QUnorm = 1e6`.
-        # So explicit uses 1e6 for Q/U normalization.
-        # But `WFA_model3D` uses `self.QUnorm = 1000.0` by default.
-        # Why the difference?
-        # Explicit solver operates on "normalized parameters" that are small (~1).
-        # BQ ~ 1000 G. If Norm=1e6, param ~ 0.001.
-        # If Norm=1000, param ~ 1.
-        # Explicit solver initial guess: B / 1e3 (Blos), B / 1e6 (BQ).
-        # So Params are expected to be O(1) or O(0.001).
-        # I'll stick to 1e6 for BQ/BU if replicating Explicit.
-        
-        self.Vnorm = 1000.0
         self.QUnorm = 1e6
         
         
@@ -181,46 +164,13 @@ class PixelSolver:
             obs_U = self.problem.obs.stokes_U
             obs_V = self.problem.obs.stokes_V
             
+            # Broadcast if needed
             if self.nt > 1 and obs_Q.ndim == 2:
-                 # Obs is (N, L), Model is (N, T, L). 
-                 # We probably want to compare Model vs Obs?
-                 # If Obs is single-frame but we model T frames, we assume Obs is const or T=1?
-                 # If Obs is movie, Observation should store it as (N, T, L).
-                 # Current Observation implementation stores (N_pixels, N_lambda).
-                 # If T>1, N_pixels includes T dimension?
-                 # PixelSolver init: self.ny, self.nx = problem.obs.shape_spatial
-                 # self.n_pixels = ny * nx.
-                 # If Obs is flattened (N*T), then self.nt should represent T?
-                 # Legacy handles T implicitly via reshaping. 
-                 # Let's assume Obs aligns with (N, L) for now as typical WFA is per-pixel.
-                 # If T>1, maybe Obs should broadcast?
                  obs_Q = obs_Q.unsqueeze(1)
                  obs_U = obs_U.unsqueeze(1)
                  obs_V = obs_V.unsqueeze(1)
             
             mask = self.problem.active_wav_idx # Spectral indices
-            
-            # --- LEGACY PARITY: Use L1 Loss (Mean Absolute Error) ---
-            # Legacy evaluate: weights[0]*mean(|dQ|) + weights[1]*mean(|dU|) + weights[2]*mean(|dV|)
-            # Where mean is over pixels (and wavelengths implicitly via flattening or manual mean)
-            # Legacy code takes 2D mean? 
-            # `torch.mean(torch.abs(self.data_stokesQ - stokesQ)[:, self.mask])`
-            # Wait, `self.mask` in legacy `evaluate` is spatial mask?
-            # "mask: [5, 6, 7] are the indices to use during the optimization" (from run output).
-            # This is SPATIAL indices.
-            # My `self.problem.mask` is SPECTRAL indices in my implementation?
-            # Let's check `WFAProblem`. `self.active_wav_idx = mask`
-            # In `profile_solver.py`: `obs = Observation(..., active_wav_idx=[5,6,7])`. 
-            # In `run_example_explicit.py`: `mask = [5, 6, 7]`. passed to `WFA_model3D`.
-            # `WFA_model3D` uses `self.mask` to slice SPATIALLY.
-            # `evaluate` does `mean(abs(diff)[:, self.mask])` -> Selects columns?
-            # Data shape (Ny*Nx, Nv). self.mask selects wavelengths?
-            # WFA_model3D init: `if mask is None: mask = range(self.data.shape[-1])`. 
-            # data shape is (Ny*Nx, Ns, Nw). 
-            # But in `forward` indices is `range(0, len(self.dIdw))`. 
-            # Actually, `self.mask` in `WFA_model3D` IS SPECTRAL (wavelengths) mask.
-            # "mask: [5, 6, 7] are the indices to use during the optimization".
-            # OK, so my `self.problem.active_wav_idx` is consistent (Spectral).
             
             # Legacy: Mean absolute difference over selected wavelengths.
             diff_V = torch.abs(obs_V - stokesV)[..., mask]
