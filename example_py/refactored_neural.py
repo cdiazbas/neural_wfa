@@ -67,8 +67,6 @@ obs = Observation(img, xl, active_wav_idx=[5, 6, 7], device=str(device))
 lin = LineInfo(5173)
 
 # WFA Physics Engine
-# WFA Physics Engine
-# Pass mask from obs or explicitly
 problem = WFAProblem(obs, lin, active_wav_idx=obs.active_wav_idx, device=device)
 
 
@@ -164,26 +162,7 @@ blos_map = final_field.blos_map.detach().cpu().numpy()
 btrans_map = final_field.btrans_map.detach().cpu().numpy()
 azi_map = final_field.phi_map.detach().cpu().numpy()
 
-# Fix azimuth range for plotting if needed (Legacy uses 0 to Pi? or standard -Pi to Pi)
-# Legacy Bazi has vmax=np.pi, vmin=0
-# Our phi is -pi/2 to pi/2? Or full range?
-# MagneticField.phi = 0.5 * atan2(u, q). Range is -pi/2 to pi/2 (180 deg ambig).
-# Legacy code: `Bazi` from `bqu2polar` is `0.5 * arctan2`.
-# Legacy Plot: `vmax=np.pi, vmin=0`.
-# We need to shift/wrap if we want 0-Pi.
-# But let's check legacy output. If legacy output is in [0, pi], we should match.
-# Legacy `bfield.py`: `phiB[phiB < 0] += np.pi` inside `initial_guess` but NOT in `bqu2polar` (static)?
-# Let's check `bqu2polar` in `bfield.py`.
-# It returns `0.5 * torch.arctan2`. Output is [-pi/2, pi/2].
-# But the PLOT in `legacy_neuralfield.py` expects [0, pi]?
-# Let's look at legacy plot again: `cmap="twilight"`.
-# The legacy code doesn't do the shift in `bqu2polar`.
-# BUT `legacy_neuralfield.py` calls `bqu2polar`.
-# I should ensure I match the *values* first.
-# If `field.phi` follows `bqu2polar` logic, it is [-pi/2, pi/2].
-# I will use `field.phi` directly. If visual mismatch occurs, I will adjust.
-# Actually, I will explicitly add the shift to match the visual expectation if legacy plots show 0-Pi.
-# `legacy_neuralfield.py` line 161: `vmax=np.pi, vmin=0`. Use 0-Pi range.
+# Fix azimuth range for plotting:
 azi_map[azi_map < 0] += np.pi
 
 plot_wfa_results(blos_map, btrans_map, azi_map, save_name="ref_neural_results.png")
@@ -216,17 +195,11 @@ plot_stokes_profiles(wav, (obs_Q, obs_U, obs_V), (mod_Q, mod_U, mod_V),
                      mask_indices=mask_indices, save_name='ref_neural_pixel_profiles.png')
 
 # 3. Loss (Chi2) Map (Approximation using full field)
-# 3. Loss (Chi2) Map (Approximation using full field)
 loss_val = problem.compute_loss(final_field).item()
 print(f"Total Loss: {loss_val:.4e}")
 
 # 4. Uncertainty Estimation (Analytical)
-# Neural fields provide smooth solutions, but we can still estimate analytical error propagation.
 print("Estimating Uncertainties...")
-# 4. Uncertainty Estimation (Analytical)
-# Neural fields provide smooth solutions, but we can still estimate analytical error propagation.
-print("Estimating Uncertainties...")
-# Returns tuple: (sigma_blos, sigma_btrans, sigma_phi)
 sigma_blos, sigma_btrans, sigma_phi = estimate_uncertainties_diagonal(problem, final_field)
 
 sigma_blos = sigma_blos.reshape(ny, nx)

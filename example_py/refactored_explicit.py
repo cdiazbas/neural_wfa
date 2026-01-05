@@ -66,9 +66,6 @@ obs = Observation(img, xl, active_wav_idx=[5, 6, 7], device=str(device))
 lin = LineInfo(5173)
 
 # WFA Physics Engine
-# Use weights=[10, 10, 10] to match Legacy explicit.optimization CALL in legacy_explicit.py
-# Use weights=[10, 10, 10] to match Legacy explicit.optimization CALL in legacy_explicit.py
-# Pass mask for correct Initial Guess computation
 problem = WFAProblem(obs, lin, weights=[10, 10, 10], active_wav_idx=torch.tensor([5, 6, 7]), device=device)
 
 
@@ -83,7 +80,6 @@ solver = PixelSolver(problem, device=device)
 # Initialize Parameters using Weak Field Approximation (Much faster convergence)
 solver.initialize_parameters(method='weak_field')
 
-# --- Plot Initial Guess (WFA) ---
 # --- Plot Initial Guess (WFA) ---
 print("Plotting Initial Guess (WFA)...")
 initial_field = solver.get_field()
@@ -169,8 +165,6 @@ sigma_est = np.std(diff_Q)
 print(f"Estimated sigma: {sigma_est:.9f}")
 
 mask_indices = [5, 6, 7] # As defined in problem setup
-# Legacy slices with `[..., mymodel.mask]`.
-# `chi2_map_Q = np.mean( (stokesQ... - img...)[..., mask]**2, axis=2 ) / sigma^2`
 chi2_Q = np.mean((mod_Q[..., mask_indices] - obs_Q[..., mask_indices])**2, axis=2) / (sigma_est**2)
 chi2_U = np.mean((mod_U[..., mask_indices] - obs_U[..., mask_indices])**2, axis=2) / (sigma_est**2)
 chi2_V = np.mean((mod_V[..., mask_indices] - obs_V[..., mask_indices])**2, axis=2) / (sigma_est**2)
@@ -182,7 +176,6 @@ plot_chi2_maps(chi2_Q, chi2_U, chi2_V, chi2_total=chi2_total,
 
 # 4. Uncertainty Estimation (Analytical)
 print("Estimating Uncertainties...")
-# Returns tuple: (sigma_blos, sigma_btrans, sigma_phi)
 unc_blos, unc_btrans, unc_phi = estimate_uncertainties_diagonal(problem, final_field)
 
 unc_blos = unc_blos.reshape(ny, nx)

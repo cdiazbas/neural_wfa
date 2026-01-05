@@ -43,27 +43,7 @@ class NeuralSolver:
         self.loss_history = []
         self.lr_history = []
         
-        # Wait, check baseline_neural.py:
-        # blos = nfmodel_blos(coords) * wfamodel.Vnorm
-        # wfamodel.Vnorm is 1 by default (checked in verify_phase2).
-        # But `prepare_initial_guess` in explicit uses Vnorm=1000? NO.
-        # `baseline_explicit` uses Vnorm=1000.
-        # `baseline_neural` uses `wfamodel` initialized standardly.
-        # Standard WFA_model3D init: self.Vnorm = 1.
-        # So in Neural Baseline, Blos is effectively raw output * 1.
-        # BUT the network `mlp` is initialized with sigma=40.0 (wBlos).
-        # This sigma scales the Fourier frequencies, changing the "bandwidth".
-        # It doesn't scale the output amplitude directly, though `beta0` is 1.
-        # The output magnitude is whatever the network learns.
-        
-        # But `MagneticField` expects `w_blos` to denormalize if we consider network output as "normalized".
-        # If network output is treated as "Raw Blos", then w_blos=1.
-        # If network output is "Normalized", w_blos=40?
-        # In legacy: `Blos = params[:, 0] * self.Vnorm`.
-        # `nfmodel` outputs `params`.
-        # So `w_blos` corresponds to `Vnorm`.
-        
-        # I will assume Vnorm=1, QUnorm=1000 for now, as per Legacy class defaults.
+        # Normalization
         self.w_blos_norm = 1.0
         self.w_bqu_norm = 1000.0
 
@@ -128,9 +108,6 @@ class NeuralSolver:
                 if optimize_bqu: self.optimizer_bqu.zero_grad()
                 
                 # Forward Pass Models
-                # Get raw outputs
-                # blos_raw: (batch, 1) usually. 
-                # bqu_raw: (batch, 2)
                 blos_raw = self.model_blos(coords_batch)
                 bqu_raw = self.model_bqu(coords_batch)
                 
@@ -141,21 +118,6 @@ class NeuralSolver:
                     w_blos=self.w_blos_norm, 
                     w_bqu=self.w_bqu_norm
                 )
-                
-                # We need to construct a subset Observation for loss?
-                # WFAProblem uses full self.obs.
-                # WFAProblem.compute_loss computes DiffQ = abs(Obs.Q - Model.Q).
-                # Obs.Q is full image. Model.Q is batch.
-                # We need WFAProblem to accept indices or handle batching!
-                # I missed adding batching support to WFAProblem.
-                # WFAProblem.compute_loss calculates residuals. 
-                # If field is batch, model outputs batch.
-                # Obs must be sliced to batch.
-                
-                # FIX: WFAProblem.compute_loss needs 'indices' argument.
-                # Or WFAProblem should be lightweight and we pass sliced Obs data?
-                # WFAProblem holds Obs.
-                # Let's add 'indices' to compute_loss.
                 
                 # Calculate Loss
                 loss = self.problem.compute_loss(
@@ -216,8 +178,6 @@ class NeuralSolver:
     def get_full_field(self) -> MagneticField:
         """Evaluates models on full coordinates and returns MagneticField."""
         with torch.no_grad():
-            # Process in chunks if too large? 
-            # For 200x200 it fits in memory.
             blos_full = self.model_blos(self.coordinates)
             bqu_full = self.model_bqu(self.coordinates)
             
