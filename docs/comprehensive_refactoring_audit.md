@@ -8,6 +8,11 @@ The project now follows the standard `src`-layout, ensuring clean imports and a 
 ```text
 neural_wfa/
 ├── pyproject.toml              # Pip-installable configuration
+├── README.md                   # Project documentation
+├── legacy/                     # Archived legacy scripts
+├── docs/                       # Project documentation & plans
+├── example_py/                 # Refactored example scripts
+├── tests/                      # Unit tests
 ├── src/
 │   └── neural_wfa/
 │       ├── __init__.py         # Package level API exports
@@ -43,9 +48,9 @@ neural_wfa/
 ### `MagneticField`
 Acts as the canonical representation of magnetic field parameters.
 - **Internal Storage**: Stores normalized $(\text{Blos}, \text{BQ}, \text{BU})$ for optimization stability.
-- **Physical Access**: Properties for `.blos`, `.btrans`, `.phi`, `.inclination`, `.bz`, `.bx`, `.by`.
+- **Physical Access**: Properties for `.blos`, `.btrans`, `.phi` (raw), `.phi_map` (visual corrected), `.inclination`.
 - **Centralized Transforms**: Static/Class methods for `polar2bqu` and `bqu2polar`.
-- **Format Conversion**: `.to_dict(numpy=True)` for easy analysis and plotting.
+- **Format Conversion**: `.to_dict(numpy=True)` for easy analysis and plotting. Use `torch2numpy` for manual extraction.
 
 ### `Observation`
 Standardizes input data handling.
@@ -64,6 +69,7 @@ The physics engine connecting data and models.
 - **Uncertainty Calibration**: Resolved the "120x discrepancy" by correctly scaling sensitivities by normalization factors within the consolidated `analysis/uncertainty.py` module.
 - **Legacy Compatibility**: Restored exact 3x3 connectivity kernels in `regularization/spatial.py` to match legacy `explicit.py` behavior while adding modern L1/L2 options.
 - **Solver Robustness**: `NeuralSolver` now includes potential field and azimuth regularization, gradient normalization, and learning rate scheduling.
+- **Plotting**: Enforced strict layout parity with legacy code, introduced `torch2numpy` for easy tensor-to-numpy conversion, and consolidated styling in `viz.py`.
 - **Formatting**: `nume2string` renamed to `format_scientific` for clarity.
 
 ## 4. Migration Summary
@@ -92,7 +98,9 @@ solver.solve(n_iterations=200, reguV=1e-3, reguQU=5e-2)
 
 # Analyze results
 field = solver.get_field()
-print(field.to_dict(numpy=True).keys())
+blos_map = torch2numpy(field.blos_map)
+# phi_map automatically handles 180-degree ambiguity [0, pi]
+azi_map = torch2numpy(field.phi_map)
 ```
 
 ---

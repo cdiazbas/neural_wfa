@@ -50,7 +50,8 @@ class MagneticField:
     - Actually `BQ \propto Btrans^2 * cos(2phi)`, `BU \propto Btrans^2 * sin(2phi)`.
     - So canonical parameters `BQ`, `BU` in the code are actually "Linearly Polarizing Field Components" or similar.
     - The class should abstract this ambiguity.
-- `phi`: Returns `0.5 * atan2(BU, BQ)`
+- `phi`: Returns `0.5 * atan2(BU, BQ)` (Raw azimuth within `[-pi/2, pi/2]`).
+- `phi_map`: Returns azimuth corrected to `[0, pi]` for visualization (resolving 180-degree ambiguity).
 - `vec`: Returns `(Bx, By, Bz)` assuming some geometry? Or just `(Blos, Btrans, Phi)`.
 
 ### Methods
@@ -95,6 +96,11 @@ class MagneticField:
 3.  **Phase 3: Cleanup**:
     - Deprecate standalone conversion functions in `bfield.py`.
     - Update example notebooks to demonstrate the new "User Friendly" API.
+
+4.  **Phase 4: API Refinement (Completed)**:
+    - Implemented `torch2numpy` in `viz.py` to standardize data extraction.
+    - Added `phi_map` auto-correction to `MagneticField` to simplify visualization scripts.
+    - Enforced strict plotting layout parity with legacy code.
 
 ## 6. Brainstorming Questions (Self-Correction)
 - **Q**: Should it handle `Bz` (vertical) vs `Blos` (line-of-sight)?

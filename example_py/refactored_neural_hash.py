@@ -82,28 +82,49 @@ YY, XX = np.meshgrid(y, x, indexing='ij')
 coords = np.stack([YY, XX], axis=-1).reshape(-1, 2)
 coords = torch.from_numpy(coords.astype(np.float32)).to(device)
 
-# Model for Blos (Line-of-Sight Magnetic Field)
-model_blos = MLP(
+# === HASH ENCODING VERSION SELECTOR ===
+# VERSION controls which improvements are active:
+#   0: Baseline (bilinear interpolation + hash collisions)
+#   1: Dense grids for coarse levels (eliminates collisions)
+#   2: Learnable smoothing (smooth gradients via learned MLP)
+#   3: Adaptive multi-scale fusion (smart level weighting)
+#   4-6: Advanced (not yet implemented)
+VERSION = 6
+
+# --- Scale / Frequency Controls ---
+# In Hash Encoding, "Scales" are controlled by the Grid Resolutions.
+# - base_resolution: Captures global, low-frequency structure (like low sigma).
+# - max_resolution:  Captures fine, high-frequency details (like high sigma).
+# Increase 'max_resolution' to resolve smaller features (e.g., 4096).
+# Decrease 'base_resolution' to capture broader trends (though 16 is usually good).
+BASE_RES = 2**0
+MAX_RES = 2**5
+NUM_LEVELS = 16
+
+# Hash Encoding Model for Blos
+model_blos = HashMLP(
     dim_in=2,
     dim_out=1,
     dim_hidden=64,
-    num_resnet_blocks=2,
-    fourier_features=True,
-    m_freqs=512,
-    sigma=40.0,
-    tune_beta=False
+    num_layers=2,
+    base_resolution=BASE_RES,
+    log2_hashmap_size=19,
+    max_resolution=MAX_RES,
+    num_levels=NUM_LEVELS,
+    version=VERSION  # Pass version
 )
 
-# Model for BQU (Transverse Magnetic Field Components)
-model_bqu = MLP(
+# Hash Encoding Model for BQU
+model_bqu = HashMLP(
     dim_in=2,
     dim_out=2,
     dim_hidden=64,
-    num_resnet_blocks=2,
-    fourier_features=True,
-    m_freqs=512,
-    sigma=8.0,
-    tune_beta=False
+    num_layers=2,
+    base_resolution=BASE_RES,
+    log2_hashmap_size=19,
+    max_resolution=MAX_RES,
+    num_levels=NUM_LEVELS,
+    version=VERSION  # Pass version
 )
 
 
@@ -117,7 +138,7 @@ solver = NeuralSolver(
     model_blos=model_blos,
     model_bqu=model_bqu,
     coordinates=coords,
-    lr=5e-4,
+    lr=5e-3, # Higher LR for Hash Encoding
     batch_size=200000,
     device=device
 )
@@ -125,14 +146,14 @@ solver = NeuralSolver(
 solver.set_normalization(w_blos=1.0, w_bqu=1000.0)
 
 print("Training Phase 1: Blos Only...")
-solver.train(n_epochs=400, optimize_blos=True, optimize_bqu=False)
+solver.train(n_epochs=200, optimize_blos=True, optimize_bqu=False)
 loss_blos = np.array(solver.loss_history)
 lr_blos = np.array(solver.lr_history)
 solver.loss_history = [] # Reset for next phase
 solver.lr_history = []
 
 print("Training Phase 2: BQU Only...")
-solver.train(n_epochs=400, optimize_blos=False, optimize_bqu=True)
+solver.train(n_epochs=200, optimize_blos=False, optimize_bqu=True)
 loss_bqu = np.array(solver.loss_history)
 lr_bqu = np.array(solver.lr_history)
 

@@ -60,6 +60,8 @@ class NeuralSolver:
         normalize_gradients: bool = True,
         regu_potential: Optional[Tuple[torch.Tensor, torch.Tensor, float]] = None,
         regu_azimuth: Optional[Tuple[torch.Tensor, float]] = None,
+        n_active_levels: Optional[int] = None,
+        progressive_schedule: Optional[Dict[int, int]] = None,
         verbose: bool = True
     ):
         """
@@ -73,6 +75,8 @@ class NeuralSolver:
             normalize_gradients: If True, scales gradients by their mean absolute value.
             regu_potential: (Bq_ref, Bu_ref, weight) for potential field regularization.
             regu_azimuth: (azimuth_ref, weight) for azimuth regularization.
+            n_active_levels: If provided, sets number of active levels in encoder.
+            progressive_schedule: Dictionary mapping epoch -> n_active_levels.
             verbose: If True, prints progress.
         """
         n_pixels = self.coordinates.shape[0]
@@ -94,6 +98,19 @@ class NeuralSolver:
             iterator = tqdm(iterator, desc="Epochs")
             
         for epoch in iterator:
+            # Progressive Level Activation (V4)
+            if progressive_schedule is not None and epoch in progressive_schedule:
+                levels = progressive_schedule[epoch]
+                if hasattr(self.model_blos, 'encoder') and hasattr(self.model_blos.encoder, 'set_active_levels'):
+                    self.model_blos.encoder.set_active_levels(levels)
+                if hasattr(self.model_bqu, 'encoder') and hasattr(self.model_bqu.encoder, 'set_active_levels'):
+                    self.model_bqu.encoder.set_active_levels(levels)
+            elif n_active_levels is not None:
+                if hasattr(self.model_blos, 'encoder') and hasattr(self.model_blos.encoder, 'set_active_levels'):
+                    self.model_blos.encoder.set_active_levels(n_active_levels)
+                if hasattr(self.model_bqu, 'encoder') and hasattr(self.model_bqu.encoder, 'set_active_levels'):
+                    self.model_bqu.encoder.set_active_levels(n_active_levels)
+
             # Shuffle indices
             perm = torch.randperm(n_pixels, device=self.device)
             

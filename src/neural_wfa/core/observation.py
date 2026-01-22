@@ -121,3 +121,5 @@ class Observation:
         x = torch.linspace(-1, 1, nx, device=self.device)
         grid_y, grid_x = torch.meshgrid(y, x, indexing='ij')
         return torch.stack([grid_y.flatten(), grid_x.flatten()], dim=-1)
+
+

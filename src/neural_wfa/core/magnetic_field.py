@@ -109,8 +109,11 @@ class MagneticField:
 
     @property
     def phi_map(self) -> torch.Tensor:
-        """Azimuth reshaped to grid orientation."""
-        return self._reshape_to_grid(self.phi)
+        """Azimuth reshaped to grid orientation. Corrected to [0, pi] range."""
+        phi = self.phi
+        # Resolve 180-degree ambiguity for visualization
+        phi = torch.where(phi < 0, phi + torch.pi, phi)
+        return self._reshape_to_grid(phi)
     
     @property
     def b_q_map(self) -> torch.Tensor:

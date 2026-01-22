@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import Union, List
+from neural_wfa.nn.encoding import HashEmbedder2D
 
 class MLP(nn.Module):
     """
@@ -174,3 +175,65 @@ class AdditiveTemporalMLP(nn.Module):
         xx_spatial = x[:, 1:]
         xx_temporal = x[:, 0:1]
         return xx_temporal * self.mlp_full(x) + self.mlp_spatial(xx_spatial)
+
+class HashMLP(nn.Module):
+    """
+    MLP that uses Multi-Resolution Hash Encoding for inputs.
+    
+    This architecture is usually much smaller (shallower/narrower) than standard MLPs
+    because the Hash Grid handles the high-frequency learning.
+    """
+    def __init__(
+        self,
+        dim_in: int = 2, # Only 2D supported for now by HashEmbedder2D
+        dim_out: int = 1,
+        dim_hidden: int = 64,
+        num_layers: int = 2,
+        activation: nn.Module = nn.GELU(),
+        # Hash Grid Params
+        num_levels: int = 16,
+        base_resolution: int = 16,
+        log2_hashmap_size: int = 19,
+        features_per_level: int = 2,
+        max_resolution: int = 2048,
+        version: int = 0  # Version selector (0-6)
+    ):
+        super().__init__()
+        
+        # 1. Encoding
+        self.encoder = HashEmbedder2D(
+            num_levels=num_levels,
+            base_resolution=base_resolution,
+            features_per_level=features_per_level,
+            log2_hashmap_size=log2_hashmap_size,
+            max_resolution=max_resolution,
+            bounding_box=((-1.0, -1.0), (1.0, 1.0)), # Assuming normalized inputs
+            version=version  # Pass version through
+        )
+        
+        # Version 3 uses adaptive fusion: output is features_per_level
+        # Other versions: output is num_levels * features_per_level (concat)
+        # V3/4/5: adaptive (features_per_level), V6: concat+plane ((L+1)*F), others: concat (L*F)
+        if version >= 3 and version < 6:
+            input_dim = features_per_level
+        elif version >= 6:
+            input_dim = (num_levels + 1) * features_per_level
+        else:
+            input_dim = num_levels * features_per_level
+        
+        # 2. MLP Head (Small)
+        layers = []
+        layers.append(nn.Linear(input_dim, dim_hidden))
+        layers.append(activation)
+        
+        for _ in range(num_layers - 1):
+            layers.append(nn.Linear(dim_hidden, dim_hidden))
+            layers.append(activation)
+            
+        layers.append(nn.Linear(dim_hidden, dim_out))
+        self.net = nn.Sequential(*layers)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (Batch, 2)
+        features = self.encoder(x)
+        return self.net(features)

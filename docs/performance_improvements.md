@@ -42,3 +42,4 @@ Beyond raw speed, the refactored implementation provides:
 - **Centralized Physics**: The `MagneticField` class is now the single source of truth for $B_{trans}^2$ vs $B_{trans}$ scaling, preventing the logic errors found in the legacy scripts (where different scripts used different formulas).
 - **Unified Uncertainty Estimation**: Support for Analytical, Taylor, and Pytorch-Vectorized (Hessian) uncertainties in a single module.
 - **Improved Numerical Stability**: Use of `GELU` activations and `ProduceLROnPlateau` scheduling by default.
+- **API Efficiency**: The introduction of `torch2numpy` and `MagneticField.phi_map` simplifies user code without introducing runtime overhead, maintaining the ~8x/7x speedups.

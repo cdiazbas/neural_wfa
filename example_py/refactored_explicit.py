@@ -23,8 +23,8 @@ from neural_wfa.physics import LineInfo
 from neural_wfa.optimization import PixelSolver
 from neural_wfa.analysis.uncertainty import estimate_uncertainties_diagonal
 from neural_wfa import MagneticField
-from legacy.plot_params import set_params
-from neural_wfa.utils.viz import plot_wfa_results, plot_stokes_profiles, plot_chi2_maps, plot_uncertainties
+from neural_wfa.utils.viz import set_params
+from neural_wfa.utils.viz import plot_wfa_results, plot_stokes_profiles, plot_chi2_maps, plot_uncertainties, torch2numpy
 set_params()
 
 # ## 1. Load Data
@@ -84,10 +84,9 @@ solver.initialize_parameters(method='weak_field')
 print("Plotting Initial Guess (WFA)...")
 initial_field = solver.get_field()
 # Using new convenience properties (automatically reshaped)
-blos_0 = initial_field.blos_map.detach().cpu().numpy()
-btrans_0 = initial_field.btrans_map.detach().cpu().numpy()
-azi_0 = initial_field.phi_map.detach().cpu().numpy()
-azi_0[azi_0 < 0] += np.pi
+blos_0 = torch2numpy(initial_field.blos_map)
+btrans_0 = torch2numpy(initial_field.btrans_map)
+azi_0 = torch2numpy(initial_field.phi_map)
 
 plot_wfa_results(blos_0, btrans_0, azi_0, save_name='ref_initial_guess.png')
 # -------------------------------
@@ -110,10 +109,9 @@ solver.solve(
 final_field = solver.get_field()
 
 # 1. Magnetic Field Maps
-blos_map = final_field.blos_map.detach().cpu().numpy()
-btrans_map = final_field.btrans_map.detach().cpu().numpy()
-azi_map = final_field.phi_map.detach().cpu().numpy()
-azi_map[azi_map < 0] += np.pi
+blos_map = torch2numpy(final_field.blos_map)
+btrans_map = torch2numpy(final_field.btrans_map)
+azi_map = torch2numpy(final_field.phi_map) # Correction now handled internally in phi_map
 
 plot_wfa_results(blos_map, btrans_map, azi_map, save_name='ref_results.png')
 
@@ -132,16 +130,19 @@ field_sub = MagneticField(
 
 stokesQ, stokesU, stokesV = problem.compute_forward_model(field_sub, indices=indices)
 
-obs_Q = obs.stokes_Q[indices].detach().cpu().numpy().flatten()
-obs_U = obs.stokes_U[indices].detach().cpu().numpy().flatten()
-obs_V = obs.stokes_V[indices].detach().cpu().numpy().flatten()
-mod_Q = stokesQ.detach().cpu().numpy().flatten()
-mod_U = stokesU.detach().cpu().numpy().flatten()
-mod_V = stokesV.detach().cpu().numpy().flatten()
-wav = obs.wavelengths.detach().cpu().numpy()
+obs_Q = torch2numpy(obs.stokes_Q[indices]).flatten()
+obs_U = torch2numpy(obs.stokes_U[indices]).flatten()
+obs_V = torch2numpy(obs.stokes_V[indices]).flatten()
+mod_Q = torch2numpy(stokesQ).flatten()
+mod_U = torch2numpy(stokesU).flatten()
+mod_V = torch2numpy(stokesV).flatten()
+print(mod_Q.shape, obs_Q.shape)
+wav = torch2numpy(obs.wavelengths).flatten()
 
 mask_indices = [5, 6, 7]
-plot_stokes_profiles(wav, (obs_Q, obs_U, obs_V), (mod_Q, mod_U, mod_V), 
+plot_stokes_profiles(wav, 
+                     (obs_Q, obs_U, obs_V), 
+                     (mod_Q, mod_U, mod_V), 
                      mask_indices=mask_indices, save_name='ref_pixel_profiles.png')
 
 # 3. Loss (Chi2) Map
@@ -152,13 +153,13 @@ print(f"Total Loss: {loss_val:.2f}")
 print("Computing Chi2 Maps...")
 stokesQ, stokesU, stokesV = problem.compute_forward_model(final_field)
 
-obs_Q = obs.stokes_Q.detach().cpu().numpy().reshape(ny, nx, nw)
-obs_U = obs.stokes_U.detach().cpu().numpy().reshape(ny, nx, nw)
-obs_V = obs.stokes_V.detach().cpu().numpy().reshape(ny, nx, nw)
+obs_Q = torch2numpy(obs.stokes_Q, shape=(ny, nx, nw))
+obs_U = torch2numpy(obs.stokes_U, shape=(ny, nx, nw))
+obs_V = torch2numpy(obs.stokes_V, shape=(ny, nx, nw))
 
-mod_Q = stokesQ.detach().cpu().numpy().reshape(ny, nx, nw)
-mod_U = stokesU.detach().cpu().numpy().reshape(ny, nx, nw)
-mod_V = stokesV.detach().cpu().numpy().reshape(ny, nx, nw)
+mod_Q = torch2numpy(stokesQ, shape=(ny, nx, nw))
+mod_U = torch2numpy(stokesU, shape=(ny, nx, nw))
+mod_V = torch2numpy(stokesV, shape=(ny, nx, nw))
 
 diff_Q = mod_Q - obs_Q
 sigma_est = np.std(diff_Q)

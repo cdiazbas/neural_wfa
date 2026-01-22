@@ -225,7 +225,7 @@ LEGACY_PARAMS = {
     "ps.papersize": "letter",
     "ps.useafm": False,
     "ps.usedistiller": False,
-    "savefig.bbox": None,
+    "savefig.bbox": "tight",
     "savefig.directory": "~",
     "savefig.edgecolor": "white",
     "savefig.facecolor": "white",
@@ -298,18 +298,7 @@ def set_plot_params(params: dict = None):
     if params is None:
         params = LEGACY_PARAMS.copy()
         
-    # Safety check for text.usetex if latex is not available
-    # We simply try to apply, if it fails, we fall back?
-    # For now, blindly apply as in legacy code.
-    
-    # plt.show() # Legacy had this, but it might popup a window. In scripts it's fine.
-    # In headless env (Agg), plt.show() does nothing usually.
-    
     plt.rcParams.copy() # Legacy did this, implies resets? No, copy() returns dict.
-    # Legacy: plt.rcParams.copy(); pylab.rcParams.update(params)
-    # The copy() call is useless unless assigned. It might be a remnant.
-    # pylab.rcParams update works on global state.
-    
     pylab.rcParams.update(params)
 
 # Alias for legacy compatibility
@@ -337,7 +326,7 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical
     divider = axes_grid1.make_axes_locatable(im.axes)
     
     if orientation.lower() == 'horizontal':
-        width = axes_grid1.axes_size.AxesX(im.axes, aspect=1.0/aspect)
+        width = axes_grid1.axes_size.AxesX(im.axes, aspect=aspect)
         pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
         current_ax = plt.gca()
         cax = divider.append_axes("bottom", size=width, pad=pad)
@@ -355,12 +344,16 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical
     cb.update_ticks()
     return cb
 
-def torch2plot(tensor: torch.Tensor, shape=None) -> np.ndarray:
+def torch2numpy(tensor: torch.Tensor, shape=None) -> np.ndarray:
     """
-    Converts a torch tensor to a numpy array and optionally reshapes it for plotting.
+    Converts a torch tensor to a numpy array and optionally reshapes it.
     """
-    arr = tensor.detach().cpu().numpy()
-    if shape and len(arr.shape) == 1:
+    if hasattr(tensor, 'detach'):
+        arr = tensor.detach().cpu().numpy()
+    else:
+        arr = np.array(tensor)
+        
+    if shape:
         return arr.reshape(shape)
     return arr
 
@@ -390,13 +383,6 @@ def plot_loss(output_dict):
     if len(loss_data) > 1:
         # Use formatting helper
         output_title_latex = formatting(loss_data[-1])
-        # Or strict copy from legacy which reimplemented logic inside
-        # Legacy code:
-        # output_title_latex = r"${:.2e}".format(output_dict["loss"][-1]).replace("e", "\\times 10^{") + "}$"
-        # Since I added formatting(), I can use it, but legacy plot_loss implementation actually didn't use formatting() func call, 
-        # it inlined it. "formatting()" func handles "e-0" vs "e". 
-        # Legacy plot_loss handles "e".
-        # Let's stick to strict legacy copy for plot_loss to be safe.
         output_title_latex = (
             r"${:.2e}".format(loss_data[-1]).replace("e", "\\times 10^{")
             + "}$"
@@ -423,6 +409,7 @@ plot_training_progress = plot_loss
 def plot_wfa_results(blos, btrans, phi, save_name=None, show=True):
     """
     Plots the Blos, Btrans, and Azimuth maps.
+    Matches legacy formatting exactly.
     """
     ny, nx = blos.shape
     fs = (9*1.5, 4.5*1.5)
@@ -434,17 +421,33 @@ def plot_wfa_results(blos, btrans, phi, save_name=None, show=True):
     im2 = ax[2].imshow(phi, vmax=np.pi, vmin=0, cmap='twilight', interpolation='nearest', extent=extent)
 
     names = [r'B$_\parallel$', r'B$_\bot$', r'$\Phi_B$']
-    add_colorbar(im0, orientation='horizontal', label=names[0]+' [G]', pad_fraction=0.17)
-    add_colorbar(im1, orientation='horizontal', label=names[1]+' [G]', pad_fraction=0.17)
-    add_colorbar(im2, orientation='horizontal', label=names[2]+' [rad]', pad_fraction=0.17)
+    
+    # Legacy uses standard figure colorbar with specific padding
+    f.colorbar(im0, ax=ax[0], orientation='horizontal', label=names[0]+' [G]', pad=0.17)
+    f.colorbar(im1, ax=ax[1], orientation='horizontal', label=names[1]+' [G]', pad=0.17)
+    f.colorbar(im2, ax=ax[2], orientation='horizontal', label=names[2]+' [rad]', pad=0.17)
 
+    # Legacy formatting loops
+    for ii in range(1, 3):
+        ax[ii].set_yticklabels([])
+    
     for ii in range(3):
         ax[ii].set_xlabel('x [pixels]')
+        ax[ii].minorticks_on()
+        ax[ii].locator_params(axis='x', nbins=5)
+        ax[ii].locator_params(axis='y', nbins=5)
+    
     ax[0].set_ylabel('y [pixels]')
     
-    plt.tight_layout()
+    f.set_tight_layout(True)
     if save_name:
         plt.savefig(save_name, dpi=300)
+    
+    # Minorticks on colorbars
+    for cbar in f.get_axes():
+         # This gets all axes including colorbars
+         cbar.minorticks_on()
+
     if show:
         plt.show()
 
@@ -454,8 +457,9 @@ def plot_stokes_profiles(wav, obs_quv, mod_quv, mask_indices=None, save_name=Non
     obs_quv: (obs_Q, obs_U, obs_V) tuple of 1D arrays
     mod_quv: (mod_Q, mod_U, mod_V) tuple of 1D arrays
     """
-    obs_Q, obs_U, obs_V = obs_quv
-    mod_Q, mod_U, mod_V = mod_quv
+    obs_Q, obs_U, obs_V = [torch2numpy(x).flatten() for x in obs_quv]
+    mod_Q, mod_U, mod_V = [torch2numpy(x).flatten() for x in mod_quv]
+    wav = torch2numpy(wav).flatten()
     
     f, ax = plt.subplots(nrows=1, ncols=3, figsize=(10*1.5, 4))
     ax = ax.flatten()
@@ -508,15 +512,17 @@ def plot_chi2_maps(chi2_q, chi2_u, chi2_v, chi2_total=None, save_name_components
     im2 = ax[2].imshow(chi2_v, cmap='magma', interpolation='nearest', extent=extent)
 
     names = [r'$\chi^2_Q$', r'$\chi^2_U$', r'$\chi^2_V$']
-    # Use helper-like logic or direct calls
-    add_colorbar(im0, pad_fraction=0.1, label=names[0]+' [a.u.]', orientation='horizontal')
-    add_colorbar(im1, pad_fraction=0.1, label=names[1]+' [a.u.]', orientation='horizontal')
-    add_colorbar(im2, pad_fraction=0.1, label=names[2]+' [a.u.]', orientation='horizontal')
+    # Legacy used custom add_colorbar with specific aspect/pad
+    add_colorbar(im0, pad_fraction=7.5, label=names[0]+' [a.u.]', orientation='horizontal', aspect=0.05, nbins=3)
+    add_colorbar(im1, pad_fraction=7.5, label=names[1]+' [a.u.]', orientation='horizontal', aspect=0.05, nbins=3)
+    add_colorbar(im2, pad_fraction=7.5, label=names[2]+' [a.u.]', orientation='horizontal', aspect=0.05, nbins=3)
 
     for ii in range(3):
         ax[ii].set_xlabel('x [pixels]')
+        ax[ii].minorticks_on()
+        ax[ii].locator_params(axis='x', nbins=5)
+        ax[ii].locator_params(axis='y', nbins=5)
     ax[0].set_ylabel('y [pixels]')
-    plt.tight_layout()
     
     if save_name_components:
         plt.savefig(save_name_components, dpi=300)
@@ -548,15 +554,28 @@ def plot_uncertainties(unc_blos, unc_btrans, unc_phi, save_name=None, show=True)
     im2 = ax[2].imshow(unc_phi, extent=extent, aspect='auto', cmap='gray', vmax=3)
 
     names = [r'$\Delta$ B$_\parallel$', r'$\Delta$ B$_\bot$', r'$\Delta \Phi_B$']
-    add_colorbar(im0, orientation='horizontal', label=names[0]+' [G]', pad_fraction=0.17)
-    add_colorbar(im1, orientation='horizontal', label=names[1]+' [G]', pad_fraction=0.17)
-    add_colorbar(im2, orientation='horizontal', label=names[2]+' [rad]', pad_fraction=0.17)
+    
+    # Legacy uses standard figure colorbar with specific padding
+    f.colorbar(im0, ax=ax[0], orientation='horizontal', label=names[0]+' [G]', pad=0.17)
+    f.colorbar(im1, ax=ax[1], orientation='horizontal', label=names[1]+' [G]', pad=0.17)
+    f.colorbar(im2, ax=ax[2], orientation='horizontal', label=names[2]+' [rad]', pad=0.17)
+
+    for ii in range(1, 3):
+        ax[ii].set_yticklabels([])
 
     for ii in range(3):
         ax[ii].set_xlabel('x [pixels]')
+        ax[ii].minorticks_on()
+        ax[ii].locator_params(axis='x', nbins=5)
+        ax[ii].locator_params(axis='y', nbins=5)
     ax[0].set_ylabel('y [pixels]')
-    plt.tight_layout()
+    
+    f.set_tight_layout(True)
     if save_name:
         plt.savefig(save_name, dpi=300)
+    
+    for cbar in f.get_axes():
+        cbar.minorticks_on()
+
     if show:
         plt.show()
