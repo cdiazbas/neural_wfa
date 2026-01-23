@@ -64,237 +64,129 @@ class HashEmbedder2D(nn.Module):
         # Primes for hashing (from the paper)
         self.primes = [1, 2654435761, 805459861]
         
-        # Version 2: Learnable smoothing with residual connection
-        # Use larger hidden dim and residual to avoid degrading bilinear features
+        # Versions 2+: Learnable smoothing or progressive training
         if version >= 2:
-            hidden_dim = features_per_level * 4  # Expand for capacity
-            self.smoother = nn.Sequential(
-                nn.Linear(features_per_level, hidden_dim),
-                nn.LayerNorm(hidden_dim),  # Stabilize training
-                nn.GELU(),
-                nn.Linear(hidden_dim, features_per_level)
-            )
-            # Weight for residual (learnable)
-            self.smooth_weight = nn.Parameter(torch.tensor(0.1))  # Start with small contribution
-        
-        # Version 3: Adaptive multi-scale fusion
-        if version >= 3:
-            self.level_predictor = nn.Sequential(
-                nn.Linear(2, 16),  # Input: normalized coordinates
-                nn.GELU(),
-                nn.Linear(16, num_levels),
-                nn.Softmax(dim=-1)
-            )
+            hidden_dim = features_per_level * 4
+            if version in [2, 4, 6]:
+                # Shared smoother (excellent in V2, V6)
+                self.smoother = nn.Sequential(
+                    nn.Linear(features_per_level, hidden_dim),
+                    nn.LayerNorm(hidden_dim),
+                    nn.GELU(),
+                    nn.Linear(hidden_dim, features_per_level)
+                )
+                self.smooth_weight = nn.Parameter(torch.tensor(0.1))
+            else:
+                # Version 3, 5: Level-specific smoothers (Higher capacity for adaptation)
+                self.smoothers = nn.ModuleList([
+                    nn.Sequential(
+                        nn.Linear(features_per_level, hidden_dim),
+                        nn.LayerNorm(hidden_dim),
+                        nn.GELU(),
+                        nn.Linear(hidden_dim, features_per_level)
+                    ) for _ in range(num_levels)
+                ])
+                self.smooth_weights = nn.Parameter(torch.ones(num_levels) * 0.1)
         
         # Version 4+: Progressive training support
-        # Start with all levels active (can be reduced dynamically)
-        self.active_levels = num_levels
+        # Supports float active_levels for smooth alpha-blending activation
+        self.active_levels = float(num_levels)
         
         # Version 6: Multi-Plane Hybrid (dense plane + hash grid)
+        self.num_levels = num_levels
         if version >= 6:
-            # Dense 2D feature plane for smooth global structure
-            self.plane_resolution = 128  # Fixed resolution
-            self.feature_plane = nn.Parameter(
-                torch.randn(1, features_per_level, self.plane_resolution, self.plane_resolution) * 0.01
-            )
+            # Strictly respect max_resolution as requested.
+            # This ensures the hybrid plane doesn't exceed the user's frequency budget.
+            res = max_resolution
+            embedding = nn.Embedding(res**2, features_per_level)
+            nn.init.uniform_(embedding.weight, -1e-4, 1e-4)
+            self.embeddings.append(embedding)
+            self.is_dense.append(True)
+            self.resolutions.append(res)
+            
+        self.total_levels = len(self.embeddings)
+        
+        # Version 4+: Progressive training support
+        # Supports float active_levels for smooth alpha-blending activation
+        self.active_levels = float(self.total_levels)
     
-    def set_active_levels(self, n: int):
+    def set_active_levels(self, n: float):
         """Set number of active levels for progressive training (V4+).
         
         Args:
-            n: Number of levels to activate (from coarsest)
+            n: Number of levels to activate (from coarsest). Supports float for smooth blending.
         """
-        self.active_levels = min(max(1, n), self.num_levels)
-
-    def _bicubic_interp(self, x_norm: torch.Tensor, res: int, level_idx: int, 
-                        x0: torch.Tensor, x1: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
-        """
-        Catmull-Rom bicubic interpolation for smooth gradients.
-        
-        Args:
-            x_norm: Normalized coordinates (N, 2)
-            res: Current level resolution
-            level_idx: Index of current level
-            x0, x1: Floor and ceil coordinates
-            w: Fractional weights
-        Returns:
-            Interpolated features (N, F)
-        """
-        wx, wy = w[..., 0:1], w[..., 1:2]
-        
-        # Helper to get index with clamping
-        def get_index_clamped(coords):
-            # Clamp coordinates to valid range
-            coords_clamped = torch.stack([
-                torch.clamp(coords[:, 0], 0, res - 1),
-                torch.clamp(coords[:, 1], 0, res - 1)
-            ], dim=-1)
-            
-            if self.is_dense[level_idx]:
-                idx = coords_clamped[:, 1] * res + coords_clamped[:, 0]
-            else:
-                h = (coords_clamped[:, 0] * self.primes[1]) ^ (coords_clamped[:, 1] * self.primes[2])
-                idx = h % self.embeddings[level_idx].num_embeddings
-            return idx
-        
-        # Fetch 4x4 grid (Catmull-Rom needs 4 points per dimension)
-        embeddings = []
-        for dy in range(-1, 3):  # -1, 0, 1, 2
-            for dx in range(-1, 3):
-                coords = torch.stack([x0[:, 0] + dx, x0[:, 1] + dy], dim=-1)
-                idx = get_index_clamped(coords)
-                embeddings.append(self.embeddings[level_idx](idx))
-        
-        # Catmull-Rom weights
-        def catmull_rom(t):
-            # Returns 4 weights for positions -1, 0, 1, 2
-            return torch.stack([
-                -0.5 * t**3 + t**2 - 0.5 * t,
-                1.5 * t**3 - 2.5 * t**2 + 1.0,
-                -1.5 * t**3 + 2.0 * t**2 + 0.5 * t,
-                0.5 * t**3 - 0.5 * t**2
-            ], dim=-1)
-        
-        weights_x = catmull_rom(wx)  # (N, 1, 4)
-        weights_y = catmull_rom(wy)  # (N, 1, 4)
-        
-        # Apply weights
-        result = torch.zeros_like(embeddings[0])
-        for iy in range(4):
-            for ix in range(4):
-                grid_idx = iy * 4 + ix
-                weight = weights_x[..., ix:ix+1] * weights_y[..., iy:iy+1]
-                result = result + weight * embeddings[grid_idx]
-        
-        return result
+        self.active_levels = min(max(1.0, float(n)), float(self.total_levels))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: (Batch, 2) coordinates. Expected range matches bounding_box.
+            x: (Batch, 2) coordinates.
         Returns:
-            (Batch, num_levels * features_per_level) embedded features.
+            (Batch, total_levels * features_per_level) concatenated features.
         """
-        # Normalize x to [0, 1] based on bounding_box
+        # Normalize x to [0, 1]
         min_v = torch.tensor(self.bounding_box[0], device=x.device)
         max_v = torch.tensor(self.bounding_box[1], device=x.device)
-        x_norm = (x - min_v) / (max_v - min_v)
-        # Clip to ensure bounds
-        x_norm = torch.clamp(x_norm, 0.0, 1.0) # Actually allow slightly outside if needed? Clamping is safer.
+        x_norm = torch.clamp((x - min_v) / (max_v - min_v), 0.0, 1.0)
         
         features = []
         
-        # V4+: Only process active levels for progressive training
-        for i in range(self.active_levels):
-            res = self.resolutions[i]
-            # Scale to grid resolution
-            x_scaled = x_norm * res
-            
-            # Get integer and fractional parts
-            x0 = torch.floor(x_scaled).long()
-            x1_unclamped = x0 + 1
-            
-            # Clamp to grid bounds
-            x0 = torch.clamp(x0, min=0, max=res - 1)
-            x1 = torch.clamp(x1_unclamped, min=0, max=res - 1)
-            
-            # Fractional part (weights for interpolation)
-            # When at boundary, w should be 0 (use only x0/y0)
-            w = x_scaled - torch.floor(x_scaled)  # (N, 2)
-            wx, wy = w[..., 0:1], w[..., 1:2]
-            
-            # 4 Corner vertices of the cell
-            # vertices: (0,0), (1,0), (0,1), (1,1)
-            # Shapes: x0 is (N, 2)
-            
-            # Helper to compute indices
-            def get_index(coords):
-                """Compute embedding indices for coordinates."""
-                # coords: (N, 2) long tensor
-                if self.is_dense[i]:
-                    # Dense grid: direct linear indexing
-                    # idx = y * res + x
-                    idx = coords[:, 1] * res + coords[:, 0]
-                else:
-                    # Sparse hash grid: XOR hashing
+        # Progressive parameters
+        full_levels = int(self.active_levels)
+        fractional = self.active_levels - full_levels
+        n_to_compute = int(np.ceil(self.active_levels))
+        
+        for i in range(self.total_levels):
+            if i < n_to_compute:
+                res = self.resolutions[i]
+                x_scaled = x_norm * res
+                
+                # Bilinear Grid Lookup
+                x0 = torch.floor(x_scaled).long()
+                x1 = torch.clamp(x0 + 1, 0, res - 1)
+                x0 = torch.clamp(x0, 0, res - 1)
+                
+                w = x_scaled - torch.floor(x_scaled)
+                wx, wy = w[..., 0:1], w[..., 1:2]
+                
+                def get_idx(coords):
+                    if self.is_dense[i]:
+                        return coords[:, 1] * res + coords[:, 0]
                     h = (coords[:, 0] * self.primes[1]) ^ (coords[:, 1] * self.primes[2])
-                    idx = h % self.embeddings[i].num_embeddings
-                return idx
+                    return h % self.embeddings[i].num_embeddings
 
-            # Collect vertex indices
-            c00 = get_index(torch.stack([x0[:, 0], x0[:, 1]], dim=-1))
-            c10 = get_index(torch.stack([x1[:, 0], x0[:, 1]], dim=-1))
-            c01 = get_index(torch.stack([x0[:, 0], x1[:, 1]], dim=-1))
-            c11 = get_index(torch.stack([x1[:, 0], x1[:, 1]], dim=-1))
-            
-            # Look up embeddings
-            e00 = self.embeddings[i](c00)
-            e10 = self.embeddings[i](c10)
-            e01 = self.embeddings[i](c01)
-            e11 = self.embeddings[i](c11)
-            
-            # Bilinear interpolation (V0, V1, V2, V3 all use bilinear base)
-            fx0 = torch.lerp(e00, e10, wx)
-            fx1 = torch.lerp(e01, e11, wx)
-            val = torch.lerp(fx0, fx1, wy)
-            
-            # Version 2+: Apply learnable smoothing with residual connection
-            if self.version >= 2 and self.version < 3:
-                # Residual connection: original + alpha * smooth(original)
-                smooth_delta = self.smoother(val)
-                val = val + torch.sigmoid(self.smooth_weight) * smooth_delta
+                c00 = get_idx(torch.stack([x0[:, 0], x0[:, 1]], dim=-1))
+                c10 = get_idx(torch.stack([x1[:, 0], x0[:, 1]], dim=-1))
+                c01 = get_idx(torch.stack([x0[:, 0], x1[:, 1]], dim=-1))
+                c11 = get_idx(torch.stack([x1[:, 0], x1[:, 1]], dim=-1))
+                
+                val = torch.lerp(
+                    torch.lerp(self.embeddings[i](c00), self.embeddings[i](c10), wx),
+                    torch.lerp(self.embeddings[i](c01), self.embeddings[i](c11), wx),
+                    wy
+                )
+                
+                # Progressive alpha blending
+                if i == full_levels and fractional > 1e-5:
+                    val = val * fractional
+                
+                # Apply smoothing (Versions 2+)
+                if self.version >= 2:
+                    # Note: V6 uses the shared smoother for its grid levels.
+                    # The Hybrid Plane (level 16) bypasses the smoother for raw global fidelity.
+                    if i < self.num_levels:
+                        if hasattr(self, 'smoother'):
+                            smooth_delta = self.smoother(val)
+                            sw = self.smooth_weight
+                        else:
+                            smooth_delta = self.smoothers[i](val)
+                            sw = self.smooth_weights[i]
+                        val = val + torch.sigmoid(sw) * smooth_delta
+            else:
+                # Level is inactive (Progressive)
+                val = torch.zeros(x.shape[0], self.features_per_level, device=x.device)
             
             features.append(val)
-        
-        # Version 6: Sample from dense feature plane
-        if self.version >= 6:
-            # x_norm is already in [0, 1], grid_sample expects [-1, 1]
-            grid_coords = x_norm * 2 - 1  # (N, 2) -> [-1, 1]
-            # grid_sample expects (N, 1, 1, 2) for 2D sampling
-            grid = grid_coords.view(-1, 1, 1, 2)
             
-            # Sample from plane (bilinear interpolation)
-            plane_features = torch.nn.functional.grid_sample(
-                self.feature_plane.expand(x.shape[0], -1, -1, -1),
-                grid,
-                align_corners=True,
-                mode='bilinear'
-            )  # (N, F, 1, 1)
-            
-            # Reshape to (N, F)
-            plane_features = plane_features.squeeze(-1).squeeze(-1).permute(1, 0).contiguous().t()
-            features.append(plane_features)
-            
-            
-        # Version 3: Adaptive multi-scale fusion (optimized)
-        if self.version >= 3 and self.version < 6:
-            # Stack all level features for batch processing
-            # features is list of (N, F), stack to (N, active_levels, F)
-            stacked_features = torch.stack(features, dim=1)  # (N, L, F)
-            
-            # Reshape for batch smoother application: (N*L, F)
-            N, L, F = stacked_features.shape
-            features_flat = stacked_features.reshape(N * L, F)
-            
-            # Apply smoother once to all features (batched)
-            smoothed_flat = self.smoother(features_flat)  # (N*L, F)
-            smoothed = smoothed_flat.reshape(N, L, F)  # (N, L, F)
-            
-            # Predict level weights based on coordinates
-            # NOTE: level_predictor was initialized with num_levels outputs,
-            # but we only use the first active_levels weights
-            all_weights = self.level_predictor(x_norm)  # (N, num_levels)
-            level_weights = all_weights[:, :self.active_levels]  # (N, active_levels)
-            # Renormalize to sum to 1
-            level_weights = level_weights / (level_weights.sum(dim=-1, keepdim=True) + 1e-8)
-            
-            # Weighted sum: broadcast and sum over level dimension
-            # level_weights: (N, L) -> (N, L, 1) for broadcasting
-            weighted = smoothed * level_weights.unsqueeze(-1)  # (N, L, F)
-            output = weighted.sum(dim=1)  # (N, F)
-            
-            return output
-        else:
-            # Version 0, 1, 2: Concatenate all level features
-            return torch.cat(features, dim=-1)  # (N, L*F)
-
+        return torch.cat(features, dim=-1)

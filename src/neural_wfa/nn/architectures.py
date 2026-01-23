@@ -196,30 +196,27 @@ class HashMLP(nn.Module):
         log2_hashmap_size: int = 19,
         features_per_level: int = 2,
         max_resolution: int = 2048,
-        version: int = 0  # Version selector (0-6)
+        version: int = 0, # Version selector (0-6)
+        encoder: nn.Module = None  # Optional shared encoder
     ):
         super().__init__()
         
         # 1. Encoding
-        self.encoder = HashEmbedder2D(
-            num_levels=num_levels,
-            base_resolution=base_resolution,
-            features_per_level=features_per_level,
-            log2_hashmap_size=log2_hashmap_size,
-            max_resolution=max_resolution,
-            bounding_box=((-1.0, -1.0), (1.0, 1.0)), # Assuming normalized inputs
-            version=version  # Pass version through
-        )
-        
-        # Version 3 uses adaptive fusion: output is features_per_level
-        # Other versions: output is num_levels * features_per_level (concat)
-        # V3/4/5: adaptive (features_per_level), V6: concat+plane ((L+1)*F), others: concat (L*F)
-        if version >= 3 and version < 6:
-            input_dim = features_per_level
-        elif version >= 6:
-            input_dim = (num_levels + 1) * features_per_level
+        if encoder is not None:
+            self.encoder = encoder
         else:
-            input_dim = num_levels * features_per_level
+            self.encoder = HashEmbedder2D(
+                num_levels=num_levels,
+                base_resolution=base_resolution,
+                features_per_level=features_per_level,
+                log2_hashmap_size=log2_hashmap_size,
+                max_resolution=max_resolution,
+                bounding_box=((-1.0, -1.0), (1.0, 1.0)), # Assuming normalized inputs
+                version=version  # Pass version through
+            )
+        
+        # Use total_levels from encoder (works for all versions including Hybrid V6)
+        input_dim = getattr(self.encoder, 'total_levels', num_levels) * features_per_level
         
         # 2. MLP Head (Small)
         layers = []

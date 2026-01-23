@@ -20,8 +20,7 @@ sys.path.append("../src")
 
 from neural_wfa import Observation, WFAProblem, MagneticField
 from neural_wfa.physics import LineInfo
-from neural_wfa.nn import MLP, HashMLP
-from neural_wfa.optimization import NeuralSolver
+from neural_wfa.nn import MLP, HashMLP, HashEmbedder2D
 from neural_wfa.optimization import NeuralSolver
 from neural_wfa.analysis.uncertainty import estimate_uncertainties_diagonal
 from neural_wfa.utils.viz import set_params
@@ -83,20 +82,20 @@ coords = np.stack([YY, XX], axis=-1).reshape(-1, 2)
 coords = torch.from_numpy(coords.astype(np.float32)).to(device)
 
 # === HASH ENCODING VERSION SELECTOR ===
-# VERSION controls which improvements are active:
-#   0: Baseline (bilinear interpolation + hash collisions)
-#   1: Dense grids for coarse levels (eliminates collisions)
-#   2: Learnable smoothing (smooth gradients via learned MLP)
-#   3: Adaptive multi-scale fusion (smart level weighting)
-#   4-6: Advanced (not yet implemented)
-VERSION = 6
+# VERSION controls the architecture:
+#   0: Baseline Hash Grid (XOR hashing + bilinear)
+#   1: Dense Grids (Best Accuracy/Speed ratio - no collisions at coarse scales)
+#   2: Shared smoothing (Residual refinement to bilinear features)
+#   3: Level-Specific smoothing (High-capacity adaptive refinement)
+#   4: Progressive training (Shared smoothers + alpha-blended activation)
+#   5: Alpha-Hybrid (Level-specific smoothers + progressive activation)
+#   6: Optimized Hybrid Plane (Dense global structure + Hash detail)
+VERSION = 1
 
 # --- Scale / Frequency Controls ---
 # In Hash Encoding, "Scales" are controlled by the Grid Resolutions.
 # - base_resolution: Captures global, low-frequency structure (like low sigma).
 # - max_resolution:  Captures fine, high-frequency details (like high sigma).
-# Increase 'max_resolution' to resolve smaller features (e.g., 4096).
-# Decrease 'base_resolution' to capture broader trends (though 16 is usually good).
 BASE_RES = 2**0
 MAX_RES = 2**5
 NUM_LEVELS = 16
@@ -107,25 +106,25 @@ model_blos = HashMLP(
     dim_out=1,
     dim_hidden=64,
     num_layers=2,
-    base_resolution=BASE_RES,
-    log2_hashmap_size=19,
-    max_resolution=MAX_RES,
     num_levels=NUM_LEVELS,
-    version=VERSION  # Pass version
-)
+    base_resolution=BASE_RES,
+    max_resolution=MAX_RES,
+    version=VERSION
+).to(device)
 
 # Hash Encoding Model for BQU
 model_bqu = HashMLP(
     dim_in=2,
-    dim_out=2,
+    dim_out=2, # Bq, Bu
     dim_hidden=64,
     num_layers=2,
-    base_resolution=BASE_RES,
-    log2_hashmap_size=19,
-    max_resolution=MAX_RES,
     num_levels=NUM_LEVELS,
-    version=VERSION  # Pass version
-)
+    base_resolution=BASE_RES,
+    max_resolution=MAX_RES,
+    version=VERSION
+).to(device)
+
+print(f"Using Independent Optimized Encoders (Version {VERSION})")
 
 
 # ## 4. Train using Neural Solver
@@ -162,12 +161,12 @@ from neural_wfa.utils.viz import plot_loss
 
 # Phase 1
 plot_loss({'loss': loss_blos, 'lr': lr_blos})
-plt.savefig("ref_neural_loss_blos.png", dpi=300)
+plt.savefig(f"ref_neural_loss_blos_v{VERSION}.png", dpi=300)
 plt.show()
 
 # Phase 2
 plot_loss({'loss': loss_bqu, 'lr': lr_bqu})
-plt.savefig("ref_neural_loss_bqu.png", dpi=300)
+plt.savefig(f"ref_neural_loss_bqu_v{VERSION}.png", dpi=300)
 plt.show()
 
 
@@ -209,7 +208,7 @@ wav = torch2numpy(obs.wavelengths).flatten()
 
 mask_indices = [5, 6, 7]
 plot_stokes_profiles(wav, (obs_Q, obs_U, obs_V), (mod_Q, mod_U, mod_V), 
-                     mask_indices=mask_indices, save_name='ref_neural_pixel_profiles.png')
+                     mask_indices=mask_indices, save_name=f'ref_neural_pixel_profiles_v{VERSION}.png')
 
 # 3. Loss (Chi2) Map (Approximation using full field)
 loss_val = problem.compute_loss(final_field).item()
@@ -223,7 +222,7 @@ sigma_blos = sigma_blos.reshape(ny, nx)
 sigma_btrans = sigma_btrans.reshape(ny, nx)
 sigma_phi = sigma_phi.reshape(ny, nx)
 
-plot_uncertainties(sigma_blos, sigma_btrans, sigma_phi, save_name="ref_neural_uncertainties.png")
+plot_uncertainties(sigma_blos, sigma_btrans, sigma_phi, save_name=f"ref_neural_uncertainties_v{VERSION}.png")
 
 
 # 5. Baseline WFA Comparison
