@@ -26,12 +26,12 @@ class MagneticField:
         """
         data: Tensor or Array.
         coordinates: 'bqu' (Blos, BQ, BU) or 'polar' (Blos, Btrans, Phi)
-        normals: (Vnorm, QUnorm). If provided, data is assumed NORMALIZED. 
-                 Or maybe data is always assumed physical? 
+        normals: (Vnorm, QUnorm). If provided, data is assumed NORMALIZED.
+                 Or maybe data is always assumed physical?
                  DECISION: Store PHYSICAL values internally to avoid confusion?
                  OR Store NORMALIZED values because gradients flow through them?
-                 
-                 DECISION: Store NORMALIZED values + normalization constants. 
+
+                 DECISION: Store NORMALIZED values + normalization constants.
                  This allows direct use in optimization (gradients) while providing physical property accessors.
         """
         self.params = ... # (N, 3) or (ny, nx, 3) Tensor, normalized
@@ -65,7 +65,7 @@ class MagneticField:
 
 ### A. Forward Model (`WFA_model3D`)
 - **Current**: `forward(params)` where `params` is `(N, 3)` tensor.
-- **New**: `forward(field: MagneticField)`? 
+- **New**: `forward(field: MagneticField)`?
   - Or `forward(field.normalized_params)`.
   - Keeping `forward` accepting tensors is good for `torch.optim` which optimizes a *Tensor*, not a class.
   - **Refined Plan**: The *Optimizer* works on a Tensor property of the class (or just a Tensor). The Class is a wrapper for *interpretability* and *IO*.
@@ -73,7 +73,7 @@ class MagneticField:
 
 ### B. Uncertainty
 - The uncertainty module returns 3 separate arrays.
-- **New**: Return a `MagneticField` instance containing the uncertainties? 
+- **New**: Return a `MagneticField` instance containing the uncertainties?
   - Or `MagneticFieldUncertainty` class?
   - Or simply `MagneticField` initialized with sigma values. (Though physical meaning of BQ_sigma is distinct).
 

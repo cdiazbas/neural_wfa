@@ -61,7 +61,7 @@ Our implementation is based on **Instant NGP (Müller et al., 2022)** and uses:
 ## Recommended Improvements (Prioritized)
 
 ### **Priority 1: Tri-cubic Interpolation**
-**Impact**: High (eliminates observed blocking artifacts)  
+**Impact**: High (eliminates observed blocking artifacts)
 **Complexity**: Medium
 
 Replace bilinear with tri-cubic interpolation using local 4x4 grid patches.
@@ -78,7 +78,7 @@ Replace bilinear with tri-cubic interpolation using local 4x4 grid patches.
 ---
 
 ### **Priority 2: Learned Grid Embeddings**
-**Impact**: High (removes hash collisions)  
+**Impact**: High (removes hash collisions)
 **Complexity**: Low
 
 For lower resolution levels where grid size < hashmap size, use dense grids instead of hashing.
@@ -101,7 +101,7 @@ for res in self.resolutions:
 ---
 
 ### **Priority 3: Progressive Level Training**
-**Impact**: Medium (better convergence)  
+**Impact**: Medium (better convergence)
 **Complexity**: Medium
 
 Start with `num_active_levels=4`, increase every N epochs.
@@ -120,7 +120,7 @@ def set_active_levels(self, n_levels):
 ---
 
 ### **Priority 4: Multi-plane Hybrid**
-**Impact**: Very High (for structured data)  
+**Impact**: Very High (for structured data)
 **Complexity**: High
 
 Combine hash grid with learned 2D feature planes.
@@ -131,7 +131,7 @@ class HybridEmbedder2D(nn.Module):
     def __init__(self):
         self.hash_grid = HashEmbedder2D(...)
         self.feature_plane = nn.Parameter(torch.randn(256, 256, F))
-    
+
     def forward(self, x):
         hash_feat = self.hash_grid(x)
         plane_feat = grid_sample(self.feature_plane, x)

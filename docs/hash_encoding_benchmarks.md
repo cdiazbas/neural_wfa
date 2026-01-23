@@ -14,7 +14,7 @@ This document provides a comprehensive comparison of Hash Encoding implementatio
 | **V6** | Multi-Plane Hybrid| **3.4580e-04** | **-21.1%** | 56.02s | +216.7% | Dense feature plane + hash grid |
 
 > [!IMPORTANT]
-> **V6 (Multi-Plane Hybrid)** is the clear winner for quality, reducing loss by over 21% with a 128x128 feature plane.  
+> **V6 (Multi-Plane Hybrid)** is the clear winner for quality, reducing loss by over 21% with a 128x128 feature plane.
 > **V1 (Dense Grids)** is the fastest full-fidelity model, outperforming the baseline in both speed and accuracy.
 
 ---
