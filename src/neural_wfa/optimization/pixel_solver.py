@@ -83,6 +83,8 @@ class PixelSolver:
         reguQU: float = 0.5e-1,
         reguT_Blos: float = 1e-3,
         reguT_BQU: float = 1e-3,
+        reguMag_Blos: float = 0.0,
+        reguMag_QU: float = 0.0,
         verbose: bool = True
     ):
         """
@@ -146,6 +148,15 @@ class PixelSolver:
             # 3. Regularization
             loss_spatial = torch.tensor(0.0, device=self.device)
             loss_temporal = torch.tensor(0.0, device=self.device)
+            loss_magnitude = torch.tensor(0.0, device=self.device)
+
+            # Magnitude Regularization (sum of squares of normalized params)
+            if reguMag_Blos > 0:
+                loss_magnitude += reguMag_Blos * torch.sum(self.params[..., 0]**2)
+            if reguMag_QU > 0:
+                loss_magnitude += reguMag_QU * torch.sum(self.params[..., 1]**2)
+                loss_magnitude += reguMag_QU * torch.sum(self.params[..., 2]**2)
+            
             
             # Spatial Regularization
             if reguV > 0 or reguQU > 0:
@@ -174,7 +185,7 @@ class PixelSolver:
                     loss_temporal += reguT_BQU * temporal_smoothness_loss(p_time[..., 1])
                     loss_temporal += reguT_BQU * temporal_smoothness_loss(p_time[..., 2])
 
-            total_loss = chi2_loss + loss_spatial + loss_temporal
+            total_loss = chi2_loss + loss_spatial + loss_temporal + loss_magnitude
             
             total_loss.backward()
             
@@ -185,7 +196,10 @@ class PixelSolver:
             
             t.set_postfix({'chi2': f"{chi2_loss.item():.2e}", 
                            'spatial': f"{loss_spatial.item():.2e}",
-                           'temporal': f"{loss_temporal.item():.2e}"})
+                           'temporal': f"{loss_temporal.item():.2e}",
+                           'mag': f"{loss_magnitude.item():.2e}"})
+        
+        print(f"Final Breakdown - Chi2: {chi2_loss.item():.2e}, Spatial: {loss_spatial.item():.2e}, Temporal: {loss_temporal.item():.2e}, Magnitude: {loss_magnitude.item():.2e}")
                 
     def get_field(self) -> MagneticField:
         with torch.no_grad():

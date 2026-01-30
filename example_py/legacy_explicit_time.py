@@ -119,6 +119,9 @@ outplot, out = explicit.optimization(
     reguQU=reguQU, 
     reguT_Blos=reguT_Blos,
     reguT_BQU=reguT_BQU,
+    # Magnitude Regularization
+    reguMag_Blos=1e-4,
+    reguMag_QU=1e-4,
     weights=[10,10,10], 
     normgrad=True
 )

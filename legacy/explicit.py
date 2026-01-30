@@ -195,6 +195,8 @@ def optimization(optimizer, niterations, parameters, model,
                        'spatial': total_spatial_loss.item(),
                        'temporal': total_temporal_loss.item(),
                        'magnitude': total_magnitude_loss.item()})
+    
+    print(f"Final Breakdown - Chi2: {chi2loss.item():.2e}, Spatial: {total_spatial_loss.item():.2e}, Temporal: {total_temporal_loss.item():.2e}, Magnitude: {total_magnitude_loss.item():.2e}")
 
 
     # Reshape the output parameters for plotting and return

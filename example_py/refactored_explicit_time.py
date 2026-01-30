@@ -155,6 +155,9 @@ solver.solve(
     # Temporal Regularization (Testing our new separation)
     reguT_Blos=1e-2,
     reguT_BQU=1e-2,
+    # Magnitude Regularization (Testing newly added feature)
+    reguMag_Blos=1e-4,
+    reguMag_QU=1e-4,
     verbose=True
 )
 
