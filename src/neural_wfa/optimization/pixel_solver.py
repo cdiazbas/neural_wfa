@@ -18,6 +18,7 @@ class PixelSolver:
     def __init__(
         self,
         problem: WFAProblem,
+        device: torch.device = None
     ):
         self.problem = problem
         self.nt = problem.nt
