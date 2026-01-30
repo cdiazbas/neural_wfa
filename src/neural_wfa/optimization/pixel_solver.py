@@ -77,6 +77,8 @@ class PixelSolver:
         self, 
         n_iterations: int = 100, 
         lr: float = 1e-2,
+        optimizer_cls: torch.optim.Optimizer = optim.Adam,
+        optimizer_kwargs: dict = None,
         reguV: float = 1e-3,
         reguQU: float = 0.5e-1,
         reguT_Blos: float = 1e-3,
@@ -87,7 +89,10 @@ class PixelSolver:
         """
         Runs the optimization loop.
         """
-        optimizer = optim.Adam([self.params], lr=lr)
+        if optimizer_kwargs is None:
+            optimizer_kwargs = {}
+            
+        optimizer = optimizer_cls([self.params], lr=lr, **optimizer_kwargs)
         
         t = trange(n_iterations, leave=True)
 
