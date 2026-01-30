@@ -66,7 +66,7 @@ obs = Observation(img, xl, active_wav_idx=[5, 6, 7], device=str(device))
 lin = LineInfo(5173)
 
 # WFA Physics Engine
-problem = WFAProblem(obs, lin, weights=[10, 10, 10], active_wav_idx=torch.tensor([5, 6, 7]), device=device)
+problem = WFAProblem(obs, lin, weights=[10, 10, 10], device=device)
 
 
 # ## 3. Pixel Solver
