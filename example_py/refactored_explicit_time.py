@@ -154,8 +154,7 @@ solver.solve(
     reguQU=1e-2,
     # Temporal Regularization (Testing our new separation)
     reguT_Blos=1e-2,
-    reguT_Bhor=1e-2,
-    reguT_Bazi=1e-2,
+    reguT_BQU=1e-2,
     verbose=True
 )
 

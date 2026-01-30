@@ -82,8 +82,7 @@ class PixelSolver:
         reguV: float = 1e-3,
         reguQU: float = 0.5e-1,
         reguT_Blos: float = 1e-3,
-        reguT_Bhor: float = 1e-3,
-        reguT_Bazi: float = 1e-3,
+        reguT_BQU: float = 1e-3,
         verbose: bool = True
     ):
         """
@@ -171,8 +170,9 @@ class PixelSolver:
                 p_time = self.params.permute(1, 0, 2)
                 
                 if reguT_Blos > 0: loss_temporal += reguT_Blos * temporal_smoothness_loss(p_time[..., 0])
-                if reguT_Bhor > 0: loss_temporal += reguT_Bhor * temporal_smoothness_loss(p_time[..., 1])
-                if reguT_Bazi > 0: loss_temporal += reguT_Bazi * temporal_smoothness_loss(p_time[..., 2])
+                if reguT_BQU > 0: 
+                    loss_temporal += reguT_BQU * temporal_smoothness_loss(p_time[..., 1])
+                    loss_temporal += reguT_BQU * temporal_smoothness_loss(p_time[..., 2])
 
             total_loss = chi2_loss + loss_spatial + loss_temporal
             
