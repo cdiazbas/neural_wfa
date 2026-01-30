@@ -66,7 +66,7 @@ obs = Observation(img, xl, active_wav_idx=[5, 6, 7], device=str(device))
 lin = LineInfo(5173)
 
 # WFA Physics Engine
-problem = WFAProblem(obs, lin, active_wav_idx=obs.active_wav_idx, device=device)
+problem = WFAProblem(obs, lin, device=device)
 
 
 # ## 3. Initialize Neural Fields
