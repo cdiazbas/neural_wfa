@@ -139,7 +139,8 @@ class PixelSolver:
             chi2_loss = w[0] * mae_Q + w[1] * mae_U + w[2] * mae_V
             
             # 3. Regularization
-            reg_loss = torch.tensor(0.0, device=self.device)
+            loss_spatial = torch.tensor(0.0, device=self.device)
+            loss_temporal = torch.tensor(0.0, device=self.device)
             
             # Spatial Regularization
             if reguV > 0 or reguQU > 0:
@@ -151,11 +152,11 @@ class PixelSolver:
                      p_t = params_grid[t_idx] # (Ny, Nx, 3)
                      
                      if reguV > 0:
-                         reg_loss += reguV * smoothness_loss(p_t[:, :, 0], penalty='l2')
+                         loss_spatial += reguV * smoothness_loss(p_t[:, :, 0], penalty='l2')
                          
                      if reguQU > 0:
-                         reg_loss += reguQU * smoothness_loss(p_t[:, :, 1], penalty='l2')
-                         reg_loss += reguQU * smoothness_loss(p_t[:, :, 2], penalty='l2')
+                         loss_spatial += reguQU * smoothness_loss(p_t[:, :, 1], penalty='l2')
+                         loss_spatial += reguQU * smoothness_loss(p_t[:, :, 2], penalty='l2')
 
             # Temporal Regularization
             if self.nt > 1:
@@ -163,11 +164,11 @@ class PixelSolver:
                 # self.params is (Nt, Ns, 3). Permute to (Ns, Nt, 3)
                 p_time = self.params.permute(1, 0, 2)
                 
-                if reguT_Blos > 0: reg_loss += reguT_Blos * temporal_smoothness_loss(p_time[..., 0])
-                if reguT_Bhor > 0: reg_loss += reguT_Bhor * temporal_smoothness_loss(p_time[..., 1])
-                if reguT_Bazi > 0: reg_loss += reguT_Bazi * temporal_smoothness_loss(p_time[..., 2])
+                if reguT_Blos > 0: loss_temporal += reguT_Blos * temporal_smoothness_loss(p_time[..., 0])
+                if reguT_Bhor > 0: loss_temporal += reguT_Bhor * temporal_smoothness_loss(p_time[..., 1])
+                if reguT_Bazi > 0: loss_temporal += reguT_Bazi * temporal_smoothness_loss(p_time[..., 2])
 
-            total_loss = chi2_loss + reg_loss
+            total_loss = chi2_loss + loss_spatial + loss_temporal
             
             total_loss.backward()
             
@@ -176,9 +177,9 @@ class PixelSolver:
             
             optimizer.step()
             
-            t.set_postfix({'total': total_loss.item(), 
-                           'chi2': chi2_loss.item(), 
-                           'spatial': reg_loss.item()})
+            t.set_postfix({'chi2': f"{chi2_loss.item():.2e}", 
+                           'spatial': f"{loss_spatial.item():.2e}",
+                           'temporal': f"{loss_temporal.item():.2e}"})
                 
     def get_field(self) -> MagneticField:
         with torch.no_grad():
