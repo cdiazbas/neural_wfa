@@ -18,11 +18,9 @@ class PixelSolver:
     def __init__(
         self,
         problem: WFAProblem,
-        nt: int = None,
-        device: torch.device = None
     ):
         self.problem = problem
-        self.nt = nt if nt is not None else problem.nt
+        self.nt = problem.nt
         self.device = device if device else problem.device
         
         # Determine spatial dimensions vs total dimensions
