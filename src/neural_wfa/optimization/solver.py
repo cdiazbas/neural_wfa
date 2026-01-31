@@ -43,6 +43,14 @@ class NeuralSolver:
         self.loss_history = []
         self.lr_history = []
         
+        # Grid dimensions for selective evaluation
+        grid_shape = self.problem.obs.grid_shape
+        if len(grid_shape) == 3:  # (Nt, Ny, Nx)
+            self.nt, self.ny, self.nx = grid_shape
+        else:  # (Ny, Nx)
+            self.nt = 1
+            self.ny, self.nx = grid_shape
+        
         # Normalization
         self.w_blos_norm = 1.0
         self.w_bqu_norm = 1000.0
@@ -192,16 +200,81 @@ class NeuralSolver:
             if verbose:
                 iterator.set_postfix(loss=epoch_loss / n_batches, lr=current_lr)
 
-    def get_full_field(self) -> MagneticField:
-        """Evaluates models on full coordinates and returns MagneticField."""
-        with torch.no_grad():
-            blos_full = self.model_blos(self.coordinates)
-            bqu_full = self.model_bqu(self.coordinates)
+    def get_full_field(self, t=None, y=None, x=None) -> MagneticField:
+        """
+        Evaluates models on selected coordinates and returns MagneticField.
+        
+        Args:
+            t: Time index (int), list of indices, or None for all times.
+            y: Y pixel index (int), list of indices, or None for all y.
+            x: X pixel index (int), list of indices, or None for all x.
             
-            return MagneticField(
-                blos_full, 
-                bqu_full, 
-                w_blos=self.w_blos_norm, 
-                w_bqu=self.w_bqu_norm,
-                grid_shape=self.problem.obs.grid_shape
-            )
+        Returns:
+            MagneticField with shape determined by selection:
+            - No args: (Nt, Ny, Nx)
+            - t=5: (Ny, Nx)
+            - y=100, x=100: (Nt,)
+            - t=5, y=100, x=100: scalar
+            
+        Examples:
+            field = solver.get_full_field()             # Full grid
+            field = solver.get_full_field(y=100, x=100) # Pixel time series
+            field = solver.get_full_field(t=5)          # Single frame
+        """
+        import numpy as np
+        
+        # Determine ranges for each dimension
+        t_range = [t] if isinstance(t, int) else (t if t is not None else list(range(self.nt)))
+        y_range = [y] if isinstance(y, int) else (y if y is not None else list(range(self.ny)))
+        x_range = [x] if isinstance(x, int) else (x if x is not None else list(range(self.nx)))
+        
+        # If querying full grid, use pre-computed coordinates for speed
+        if t is None and y is None and x is None:
+            with torch.no_grad():
+                blos_full = self.model_blos(self.coordinates)
+                bqu_full = self.model_bqu(self.coordinates)
+                
+                return MagneticField(
+                    blos_full, 
+                    bqu_full, 
+                    w_blos=self.w_blos_norm, 
+                    w_bqu=self.w_bqu_norm,
+                    grid_shape=self.problem.obs.grid_shape
+                )
+        
+        # Build selected coordinates (normalized -1 to 1)
+        t_norm = np.linspace(-1, 1, self.nt) if self.nt > 1 else np.array([0.0])
+        y_norm = np.linspace(-1, 1, self.ny)
+        x_norm = np.linspace(-1, 1, self.nx)
+        
+        # Create meshgrid for selected indices
+        t_sel = t_norm[t_range]
+        y_sel = y_norm[y_range]
+        x_sel = x_norm[x_range]
+        
+        if self.nt > 1:
+            TT, YY, XX = np.meshgrid(t_sel, y_sel, x_sel, indexing='ij')
+            coords = np.stack([TT, YY, XX], axis=-1).reshape(-1, 3)
+        else:
+            YY, XX = np.meshgrid(y_sel, x_sel, indexing='ij')
+            coords = np.stack([YY, XX], axis=-1).reshape(-1, 2)
+        
+        coords_tensor = torch.from_numpy(coords.astype(np.float32)).to(self.device)
+        
+        # Evaluate models
+        with torch.no_grad():
+            blos = self.model_blos(coords_tensor)
+            bqu = self.model_bqu(coords_tensor)
+        
+        # Determine output grid shape
+        out_shape = (len(t_range), len(y_range), len(x_range))
+        # Squeeze singleton dimensions
+        out_shape = tuple(s for s in out_shape if s > 1) or (1,)
+        
+        return MagneticField(
+            blos, 
+            bqu, 
+            w_blos=self.w_blos_norm, 
+            w_bqu=self.w_bqu_norm,
+            grid_shape=out_shape
+        )

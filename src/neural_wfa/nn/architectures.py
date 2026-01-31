@@ -182,41 +182,78 @@ class HashMLP(nn.Module):
     
     This architecture is usually much smaller (shallower/narrower) than standard MLPs
     because the Hash Grid handles the high-frequency learning.
+    
+    Supports 2D and 3D inputs via unified HashEmbedding factory.
     """
     def __init__(
         self,
-        dim_in: int = 2, # Only 2D supported for now by HashEmbedder2D
+        dim_in: int = 2,  # 2D or 3D supported
         dim_out: int = 1,
         dim_hidden: int = 64,
         num_layers: int = 2,
         activation: nn.Module = nn.GELU(),
-        # Hash Grid Params
+        # Hash Grid Params (spatial)
         num_levels: int = 16,
         base_resolution: int = 16,
         log2_hashmap_size: int = 19,
         features_per_level: int = 2,
         max_resolution: int = 2048,
-        version: int = 0, # Version selector (0-6)
-        encoder: nn.Module = None  # Optional shared encoder
+        version: int = 0,  # Version selector (0-6)
+        # 3D-specific params
+        mode: str = 'auto',  # 'auto', 'full', or 'hybrid' for 3D
+        temporal_base_resolution: int = None,  # For full 3D
+        temporal_max_resolution: int = None,   # For full 3D
+        temporal_m_freqs: int = 64,            # For hybrid 3D
+        temporal_sigma: float = 10.0,          # For hybrid 3D
+        # Optional shared encoder
+        encoder: nn.Module = None
     ):
         super().__init__()
+        self.dim_in = dim_in
         
         # 1. Encoding
         if encoder is not None:
             self.encoder = encoder
         else:
-            self.encoder = HashEmbedder2D(
+            from neural_wfa.nn.encoding import HashEmbedding
+            
+            # Build kwargs based on mode and dim_in
+            common_kwargs = dict(
                 num_levels=num_levels,
                 base_resolution=base_resolution,
                 features_per_level=features_per_level,
                 log2_hashmap_size=log2_hashmap_size,
                 max_resolution=max_resolution,
-                bounding_box=((-1.0, -1.0), (1.0, 1.0)), # Assuming normalized inputs
-                version=version  # Pass version through
+                version=version,
             )
+            
+            if dim_in == 3:
+                if mode == 'hybrid':
+                    # Hybrid mode: spatial params prefixed
+                    common_kwargs = dict(
+                        spatial_num_levels=num_levels,
+                        spatial_base_resolution=base_resolution,
+                        spatial_features_per_level=features_per_level,
+                        spatial_log2_hashmap_size=log2_hashmap_size,
+                        spatial_max_resolution=max_resolution,
+                        spatial_version=version,
+                        temporal_m_freqs=temporal_m_freqs,
+                        temporal_sigma=temporal_sigma,
+                    )
+                else:
+                    # Full 3D mode
+                    common_kwargs['temporal_base_resolution'] = temporal_base_resolution
+                    common_kwargs['temporal_max_resolution'] = temporal_max_resolution
+            
+            self.encoder = HashEmbedding(dim_in=dim_in, mode=mode, **common_kwargs)
         
-        # Use total_levels from encoder (works for all versions including Hybrid V6)
-        input_dim = getattr(self.encoder, 'total_levels', num_levels) * features_per_level
+        # Get output dimension from encoder
+        if hasattr(self.encoder, 'output_dim'):
+            input_dim = self.encoder.output_dim
+        elif hasattr(self.encoder, 'total_levels'):
+            input_dim = self.encoder.total_levels * features_per_level
+        else:
+            input_dim = num_levels * features_per_level
         
         # 2. MLP Head (Small)
         layers = []
@@ -231,6 +268,6 @@ class HashMLP(nn.Module):
         self.net = nn.Sequential(*layers)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (Batch, 2)
         features = self.encoder(x)
         return self.net(features)
+

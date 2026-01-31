@@ -22,7 +22,6 @@ from neural_wfa import Observation, WFAProblem, MagneticField
 from neural_wfa.physics import LineInfo
 from neural_wfa.nn import MLP, HashMLP
 from neural_wfa.optimization import NeuralSolver
-from neural_wfa.optimization import NeuralSolver
 from neural_wfa.analysis.uncertainty import estimate_uncertainties_diagonal
 from neural_wfa.utils.viz import set_params
 from neural_wfa.utils.viz import plot_wfa_results, plot_stokes_profiles, plot_uncertainties, torch2numpy

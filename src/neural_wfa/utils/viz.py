@@ -579,3 +579,85 @@ def plot_uncertainties(unc_blos, unc_btrans, unc_phi, save_name=None, show=True)
 
     if show:
         plt.show()
+
+
+def plot_temporal_evolution(
+    time_axis,
+    blos_series_1, btrans_series_1, azi_series_1,
+    blos_series_2=None, btrans_series_2=None, azi_series_2=None,
+    label_1="WFA",
+    label_2="Neural",
+    pixel_coords=None,
+    save_name=None,
+    show=False,
+    figsize=(12, 4)
+):
+    """
+    Plot the temporal evolution of magnetic field parameters at a single pixel.
+    
+    Compares one or two methods (e.g., WFA vs Neural Field) across time frames.
+    
+    Args:
+        time_axis: Array of time indices or labels (e.g., [0, 1, 2, 3]).
+        blos_series_1: 1D array of Blos values over time for method 1.
+        btrans_series_1: 1D array of Btrans values over time for method 1.
+        azi_series_1: 1D array of azimuth values over time for method 1.
+        blos_series_2: Optional. Blos values for method 2.
+        btrans_series_2: Optional. Btrans values for method 2.
+        azi_series_2: Optional. Azimuth values for method 2.
+        label_1: Label for method 1.
+        label_2: Label for method 2.
+        pixel_coords: Tuple (py, px) for title annotation.
+        save_name: If provided, saves the plot to this path.
+        show: If True, displays the plot.
+        figsize: Figure size (width, height).
+    """
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+    
+    # Convert to numpy if needed
+    blos_1 = torch2numpy(blos_series_1) if isinstance(blos_series_1, torch.Tensor) else np.asarray(blos_series_1)
+    btrans_1 = torch2numpy(btrans_series_1) if isinstance(btrans_series_1, torch.Tensor) else np.asarray(btrans_series_1)
+    azi_1 = torch2numpy(azi_series_1) if isinstance(azi_series_1, torch.Tensor) else np.asarray(azi_series_1)
+    t = np.asarray(time_axis)
+    
+    # Plot Method 1
+    axes[0].plot(t, blos_1, 'o-', label=label_1, color='C0', markersize=6)
+    axes[1].plot(t, btrans_1, 'o-', label=label_1, color='C0', markersize=6)
+    axes[2].plot(t, azi_1, 'o-', label=label_1, color='C0', markersize=6)
+    
+    # Plot Method 2 (if provided)
+    if blos_series_2 is not None:
+        blos_2 = torch2numpy(blos_series_2) if isinstance(blos_series_2, torch.Tensor) else np.asarray(blos_series_2)
+        btrans_2 = torch2numpy(btrans_series_2) if isinstance(btrans_series_2, torch.Tensor) else np.asarray(btrans_series_2)
+        azi_2 = torch2numpy(azi_series_2) if isinstance(azi_series_2, torch.Tensor) else np.asarray(azi_series_2)
+        
+        axes[0].plot(t, blos_2, 's--', label=label_2, color='C1', markersize=6)
+        axes[1].plot(t, btrans_2, 's--', label=label_2, color='C1', markersize=6)
+        axes[2].plot(t, azi_2, 's--', label=label_2, color='C1', markersize=6)
+    
+    # Labels and formatting
+    titles = [r'B$_\parallel$ (Blos)', r'B$_\bot$ (Btrans)', r'$\Phi_B$ (Azimuth)']
+    ylabels = ['[G]', '[G]', '[rad]']
+    
+    for i, ax in enumerate(axes):
+        ax.set_xlabel('Time Frame')
+        ax.set_ylabel(ylabels[i])
+        ax.set_title(titles[i])
+        ax.legend(loc='best', fontsize=9)
+        ax.grid(True, alpha=0.3)
+        ax.minorticks_on()
+    
+    # Add pixel annotation to suptitle
+    if pixel_coords is not None:
+        fig.suptitle(f'Temporal Evolution at Pixel (y={pixel_coords[0]}, x={pixel_coords[1]})', 
+                     fontsize=12, y=1.02)
+    
+    fig.tight_layout()
+    
+    if save_name:
+        plt.savefig(save_name, dpi=300, bbox_inches='tight')
+    
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
