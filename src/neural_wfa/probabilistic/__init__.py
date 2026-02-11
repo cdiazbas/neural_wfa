@@ -1,5 +1,5 @@
 """
-Probabilistic WFA Module
+Probabilistic WFA Module.
 
 This subpackage provides probabilistic extensions to the WFA inversion:
 - ProbabilisticMagneticField: Stores distributions instead of point estimates
@@ -13,6 +13,6 @@ from neural_wfa.probabilistic.pixel_solver import ProbabilisticPixelSolver
 
 __all__ = [
     "ProbabilisticMagneticField",
-    "ProbabilisticPixelSolver", 
+    "ProbabilisticPixelSolver",
     "broadcast_sigma_obs",
 ]

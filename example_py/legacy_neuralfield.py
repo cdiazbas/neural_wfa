@@ -16,8 +16,8 @@ from legacy.plot_params import set_params
 
 set_params()
 
-get_ipython().run_line_magic('load_ext', 'autoreload')
-get_ipython().run_line_magic('autoreload', '2')
+get_ipython().run_line_magic("load_ext", "autoreload")
+get_ipython().run_line_magic("autoreload", "2")
 
 
 # In[2]:
@@ -29,7 +29,7 @@ import astropy.io.fits as fits
 # Handle data path
 datadir = "example_py/plage_sst/"
 if not os.path.exists(datadir):
-    datadir = "plage_sst/" # Fallback if running from inside dir
+    datadir = "plage_sst/"  # Fallback if running from inside dir
 img = np.ascontiguousarray(
     fits.open(datadir + "CRISP_5173_plage_dat.fits", "readonly")[0].data,
     dtype="float32",
@@ -251,7 +251,3 @@ plt.savefig("legacy_neural_wfa_baseline.png", dpi=300)
 
 
 # In[ ]:
-
-
-
-

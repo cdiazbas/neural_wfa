@@ -2,10 +2,11 @@ import astropy.io.fits as fits
 import numpy as np
 import os
 
+
 def writefits(filename: str, data: np.ndarray, header=None, overwrite: bool = True):
     """
     Writes a NumPy array to a FITS file.
-    
+
     Args:
         filename (str): Output path.
         data (np.ndarray): Data to save.
@@ -14,9 +15,10 @@ def writefits(filename: str, data: np.ndarray, header=None, overwrite: bool = Tr
     """
     if os.path.exists(filename) and not overwrite:
         raise FileExistsError(f"File {filename} already exists.")
-        
+
     hdu = fits.PrimaryHDU(data, header=header)
     hdu.writeto(filename, overwrite=overwrite)
+
 
 def readfits(filename: str) -> np.ndarray:
     """

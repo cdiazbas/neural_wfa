@@ -1,9 +1,8 @@
-import numpy as np
-
 class LineInfo:
     """
     Class to store the atomic data of spectral lines for WFA routines.
     """
+
     def __init__(self, cw=8542, verbose=False):
         self.larm = 4.668645048281451e-13
 
@@ -56,12 +55,8 @@ class LineInfo:
             self.j2 = 0.0
             self.g1 = 0.0
             self.g2 = 0.0
-            self.cw = float(cw) # Assuming cw is passed, maybe it's custom? 
-            # In original code, it returned early. 
-            # Here we let it proceed to calc geff/Gg (which will be 0) or handle graceful failure?
-            # Original code returns early if not implemented.
-            # But let's calculate geff/Gg as zeros safely.
-            
+            self.cw = float(cw)
+
         # Calculate parameters
         self._calculate_parameters(verbose)
 
@@ -82,7 +77,5 @@ class LineInfo:
 
         if verbose:
             print(
-                "LineInfo: cw={0}, geff={1}, Gg={2}".format(
-                    self.cw, self.geff, self.Gg
-                )
+                "LineInfo: cw={0}, geff={1}, Gg={2}".format(self.cw, self.geff, self.Gg)
             )

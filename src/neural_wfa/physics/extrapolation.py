@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def potential_extrapolation(Bz, zz=[0.0], pixel=[0.1, 0.1]):
     """
     Computes a potential extrapolation from the observed vertical field. It
@@ -40,7 +41,9 @@ def potential_extrapolation(Bz, zz=[0.0], pixel=[0.1, 0.1]):
     cxy = ayx
     cyx = axy
     cyy = ayy
-    fa = np.fft.fft2(Bz_norm) / (Bz_norm.shape[0] * Bz_norm.shape[1])  # Normalization IDL fft
+    fa = np.fft.fft2(Bz_norm) / (
+        Bz_norm.shape[0] * Bz_norm.shape[1]
+    )  # Normalization IDL fft
     fa[0, 0] = 0.0  # make sure net flux is zero
 
     kxi = np.array(
@@ -96,6 +99,7 @@ def potential_extrapolation(Bz, zz=[0.0], pixel=[0.1, 0.1]):
     B[:, :, :, 2] = B[:, :, :, 2] + dcterm
     return B
 
+
 def make_square(Bz_numpy):
     """
     Embed the Bz_numpy into a square matrix for the potential extrapolation.
@@ -118,6 +122,7 @@ def make_square(Bz_numpy):
         Bz_sq = Bz_sq.T
 
     return Bz_sq
+
 
 def embed_potential_extrapolation(Bz_numpy, offset=0.0):
     """
@@ -142,7 +147,9 @@ def embed_potential_extrapolation(Bz_numpy, offset=0.0):
     newB_rearranged[:, :, :, 1] = np.sqrt(
         newB[:, :, :, 0] ** 2.0 + newB[:, :, :, 1] ** 2
     )
-    newB_rearranged[:, :, :, 2] = np.arctan2(newB[:, :, :, 1], newB[:, :, :, 0]) # Fixed atan to atan2 for stability
+    newB_rearranged[:, :, :, 2] = np.arctan2(
+        newB[:, :, :, 1], newB[:, :, :, 0]
+    )  # Fixed atan to atan2 for stability
 
     # Add an offset
     newB_rearranged[:, :, :, 2] += offset
@@ -150,5 +157,5 @@ def embed_potential_extrapolation(Bz_numpy, offset=0.0):
     # Make the azimuth between 0 and 180 degrees:
     newB_rearranged[:, :, :, 2][newB_rearranged[:, :, :, 2] < 0] += np.pi
     newB_rearranged[:, :, :, 2] = np.mod(newB_rearranged[:, :, :, 2], np.pi)
-    
+
     return newB_rearranged

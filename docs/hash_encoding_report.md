@@ -17,14 +17,14 @@ Benchmarks were conducted on 200x178 solar data using 400 iterations (200/phase)
 | **V6** | Hybrid Plane | 4.31e-04| -1.4% | 23.0s | +31% | **Speed Optimized** |
 
 > [!NOTE]
-> **Optimized V6**: We achieved a 2.7x speedup in V6 (62s → 23s) by replacing the generic `grid_sample` with specialized dense-grid indexing. 
+> **Optimized V6**: We achieved a 2.7x speedup in V6 (62s → 23s) by replacing the generic `grid_sample` with specialized dense-grid indexing.
 
 ---
 
 ## 2. Implementation & Architectural Overhaul
 
 ### The Information Bottleneck Fix (V3/V5)
-The main failure in previous iterations was an information bottleneck that reduced 16 levels of features into just 2 dimensions. 
+The main failure in previous iterations was an information bottleneck that reduced 16 levels of features into just 2 dimensions.
 - **Solution**: We restored **Multi-Scale Concatenation** across all versions.
 - **Result**: Versions 3, 4, and 5 now leverage the full 32-feature vector, resolving the previous visual patterns and high loss.
 

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from einops import rearrange
 import subprocess
 
+
 # ====================================================================
 def get_free_gpu():
     """
@@ -154,6 +155,7 @@ class AttributeDict(dict):
         - Only keys that are valid Python identifiers can be accessed as attributes.
         - Attempting to access a missing attribute will raise a KeyError.
     """
+
     __slots__ = ()
     __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
@@ -174,11 +176,14 @@ def writefits(name, d):
     io = fits.PrimaryHDU(d)
     io.writeto(name, overwrite=True)
 
+
 # ====================================================================
-def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical', **kwargs):
+def add_colorbar(
+    im, aspect=20, pad_fraction=0.5, nbins=5, orientation="vertical", **kwargs
+):
     """
     Add a color bar to an image plot.
-    
+
     Args:
         im: The image object (result of plt.imshow, etc.)
         aspect: Aspect ratio of the colorbar
@@ -191,8 +196,8 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical
     from matplotlib import ticker
 
     divider = axes_grid1.make_axes_locatable(im.axes)
-    
-    if orientation.lower() == 'horizontal':
+
+    if orientation.lower() == "horizontal":
         width = axes_grid1.axes_size.AxesX(im.axes, aspect=aspect)
         pad = axes_grid1.axes_size.Fraction(pad_fraction, width)
         current_ax = plt.gca()
@@ -204,12 +209,13 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, nbins=5, orientation='vertical
         current_ax = plt.gca()
         cax = divider.append_axes("right", size=width, pad=pad)
         plt.sca(current_ax)
-    
+
     cb = im.axes.figure.colorbar(im, cax=cax, orientation=orientation, **kwargs)
     tick_locator = ticker.MaxNLocator(nbins)
     cb.locator = tick_locator
     cb.update_ticks()
     return cb
+
 
 # ====================================================================
 def torch2plot(stokes, mymodel):
@@ -225,10 +231,13 @@ def torch2plot(stokes, mymodel):
     """
     # Convert the tensor to a numpy array and reshape it
     from einops import rearrange
+
     stokes = stokes.detach().cpu().numpy()
-    stokes = rearrange(stokes, "(t y x) nwav -> t y x nwav", t=mymodel.nt, x=mymodel.nx, y=mymodel.ny)
+    stokes = rearrange(
+        stokes, "(t y x) nwav -> t y x nwav", t=mymodel.nt, x=mymodel.nx, y=mymodel.ny
+    )
     return stokes
-    
+
 
 # ====================================================================
 def regu(out, ii, img):
@@ -408,6 +417,7 @@ def regu2_angle(out, ii, img, plot=False, sine=False):
     ) + torch.sum(
         torch.abs(cos_output_smooth - torch.cos(2 * mout[:, :, :, ii])) ** 2.0
     )
+
 
 # ====================================================================
 def regu_mean(out, ii, img):

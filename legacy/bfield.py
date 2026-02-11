@@ -120,7 +120,6 @@ def cder(x, y):
     return yp
 
 
-
 # ====================================================================
 def huber_loss(input, target, delta=1.0, mask=None):
     """
@@ -288,41 +287,40 @@ class WFA_model3D(nn.Module):
                     )
                 )
             )
-    
+
     def chi2(self, params, weights=[1.0, 1.0, 1.0], index=None):
         # if params is not a tensor, convert it to a tensor
         if not isinstance(params, torch.Tensor):
             params = torch.tensor(params, dtype=torch.float32)
-        
-        
+
         stokesQ, stokesU, stokesV = self.forward(params, index=index)
 
         if index is None:
             index = range(0, len(self.dIdw))
 
         # Using only the index from observed data, and only the values in the mask
-        chi2_map =  (
+        chi2_map = (
             weights[0]
             * torch.mean(
-                (self.data_stokesQ[index, :] - stokesQ)[:, self.mask] ** 2.0
-            , axis=1)
+                (self.data_stokesQ[index, :] - stokesQ)[:, self.mask] ** 2.0, axis=1
+            )
             + weights[1]
             * torch.mean(
-                (self.data_stokesU[index, :] - stokesU)[:, self.mask] ** 2.0
-            , axis=1)
+                (self.data_stokesU[index, :] - stokesU)[:, self.mask] ** 2.0, axis=1
+            )
             + weights[2]
             * torch.mean(
-                (self.data_stokesV[index, :] - stokesV)[:, self.mask] ** 2.0
-            , axis=1)
+                (self.data_stokesV[index, :] - stokesV)[:, self.mask] ** 2.0, axis=1
+            )
         )
-        
+
         return chi2_map.reshape(self.ny, self.nx, self.nt).detach().cpu().numpy()
-    
-    def estimate_uncertainties(self, params, index=None, method='analytical'):
+
+    def estimate_uncertainties(self, params, index=None, method="analytical"):
         """
-        Estimate uncertainties for the WFA model parameters.
-        Delegates to models.uncertainty module.
-        
+        Estimate uncertainties for the WFA model parameters. Delegates to
+        models.uncertainty module.
+
         Parameters
         ----------
         params : torch.Tensor
@@ -331,7 +329,7 @@ class WFA_model3D(nn.Module):
             Indices to use for computation
         method : str, optional
             Method to use: 'analytical', 'taylor', or 'pytorch'
-            
+
         Returns
         -------
         uncertainty_blos : np.ndarray
@@ -341,18 +339,19 @@ class WFA_model3D(nn.Module):
         from legacy.uncertainty import (
             estimate_uncertainties_analytical,
             estimate_uncertainties_taylor,
-            estimate_uncertainties_pytorch
+            estimate_uncertainties_pytorch,
         )
-        
-        if method == 'analytical':
+
+        if method == "analytical":
             return estimate_uncertainties_analytical(self, params, index=index)
-        elif method == 'taylor':
+        elif method == "taylor":
             return estimate_uncertainties_taylor(self, params, index=index)
-        elif method == 'pytorch':
+        elif method == "pytorch":
             return estimate_uncertainties_pytorch(self, params, index=index)
         else:
-            raise ValueError(f"Unknown method: {method}. Use 'analytical', 'taylor', or 'pytorch'")
-
+            raise ValueError(
+                f"Unknown method: {method}. Use 'analytical', 'taylor', or 'pytorch'"
+            )
 
     def initial_guess(self, inner=False, split=False):
         Blos = torch.sum(
