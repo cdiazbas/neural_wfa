@@ -6,6 +6,10 @@ from typing import Dict, Tuple, Optional
 
 from neural_wfa.core.problem import WFAProblem
 from neural_wfa.core.magnetic_field import MagneticField
+from neural_wfa.regularization.spatial import (
+    potential_regularization,
+    azimuth_regularization,
+)
 
 
 class NeuralSolver:
@@ -102,9 +106,14 @@ class NeuralSolver:
 
         # Prep Azimuth reg if provided
         if regu_azimuth is not None:
-            ref_azi, _ = regu_azimuth
-            sin2phi_ref = torch.sin(2 * ref_azi).to(self.device).flatten()
-            cos2phi_ref = torch.cos(2 * ref_azi).to(self.device).flatten()
+            azi_ref, _ = regu_azimuth
+            azi_ref = azi_ref.to(self.device).flatten()
+
+        # Prep Potential reg if provided
+        if regu_potential is not None:
+            Bq_ref, Bu_ref, _ = regu_potential
+            Bq_ref = Bq_ref.to(self.device).flatten()
+            Bu_ref = Bu_ref.to(self.device).flatten()
 
         iterator = range(n_epochs)
         if verbose:
@@ -166,22 +175,16 @@ class NeuralSolver:
 
                 # Additional Regularizations
                 if regu_potential is not None and optimize_bqu:
-                    Bq_ref, Bu_ref, weight = regu_potential
-                    loss += weight * torch.mean(
-                        (bqu_raw[:, 0] - Bq_ref.to(self.device).flatten()[idx]) ** 2
-                    )
-                    loss += weight * torch.mean(
-                        (bqu_raw[:, 1] - Bu_ref.to(self.device).flatten()[idx]) ** 2
+                    _, _, weight = regu_potential
+                    loss += weight * potential_regularization(
+                        bqu_raw[:, 0], bqu_raw[:, 1], Bq_ref[idx], Bu_ref[idx]
                     )
 
                 if regu_azimuth is not None and optimize_bqu:
                     _, weight = regu_azimuth
-                    # Bt for azimuth calculation (normalized)
-                    bt_norm = torch.sqrt(bqu_raw[:, 0] ** 2 + bqu_raw[:, 1] ** 2 + 1e-9)
-                    sin2phi = bqu_raw[:, 1] / bt_norm
-                    cos2phi = bqu_raw[:, 0] / bt_norm
-                    loss += weight * torch.mean((sin2phi - sin2phi_ref[idx]) ** 2)
-                    loss += weight * torch.mean((cos2phi - cos2phi_ref[idx]) ** 2)
+                    loss += weight * azimuth_regularization(
+                        bqu_raw[:, 0], bqu_raw[:, 1], azi_ref[idx]
+                    )
 
                 loss.backward()
 

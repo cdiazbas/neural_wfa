@@ -34,7 +34,7 @@ src/neural_wfa/
 ├── nn/
 │   └── mlp.py              # Neural Network Architectures (MLP, Fourier Features)
 ├── optimization/
-│   ├── solver.py           # NeuralSolver (Neural Field Training)
+│   ├── neural_solver.py    # NeuralSolver (Neural Field Training)
 │   └── pixel_solver.py     # PixelSolver (Explicit Pixel-wise Inversion)
 ├── regularization/
 │   ├── spatial.py          # Spatial regularization (L1/L2 smoothness, TV)
@@ -50,7 +50,7 @@ See `examples/refactored_neural.ipynb` for a complete example.
 
 ```python
 from neural_wfa.core.problem import WFAProblem
-from neural_wfa.optimization.solver import NeuralSolver
+from neural_wfa.optimization.neural_solver import NeuralSolver
 from neural_wfa.nn.mlp import MLP
 
 # ... Setup obs, lin ...

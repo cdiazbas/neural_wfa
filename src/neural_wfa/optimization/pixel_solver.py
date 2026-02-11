@@ -4,7 +4,11 @@ from tqdm import trange
 
 from neural_wfa.core.problem import WFAProblem
 from neural_wfa.core.magnetic_field import MagneticField
-from neural_wfa.regularization.spatial import smoothness_loss
+from neural_wfa.regularization.spatial import (
+    smoothness_loss,
+    potential_regularization,
+    azimuth_regularization,
+)
 from neural_wfa.regularization.temporal import temporal_smoothness_loss
 
 
@@ -85,6 +89,10 @@ class PixelSolver:
         reguT_BQU: float = 1e-3,
         reguMag_Blos: float = 0.0,
         reguMag_QU: float = 0.0,
+        regu_potential: list = None,
+        regu_potential_weight: float = 0.0,
+        regu_azimuth: torch.Tensor = None,
+        regu_azimuth_weight: float = 0.0,
         verbose: bool = True,
     ):
         """
@@ -94,6 +102,25 @@ class PixelSolver:
             optimizer_kwargs = {}
 
         optimizer = optimizer_cls([self.params], lr=lr, **optimizer_kwargs)
+
+        # Prepare regularization targets
+        if regu_potential is not None:
+            # Expected [Bq_pot, Bu_pot] as numpy or tensor
+            Bq_pot = torch.as_tensor(
+                regu_potential[0], device=self.device, dtype=torch.float32
+            ).flatten()
+            Bu_pot = torch.as_tensor(
+                regu_potential[1], device=self.device, dtype=torch.float32
+            ).flatten()
+            # Normalize
+            Bq_pot = Bq_pot / self.QUnorm
+            Bu_pot = Bu_pot / self.QUnorm
+
+        if regu_azimuth is not None:
+            # Expected azimuth map (radians)
+            azi_ref = torch.as_tensor(
+                regu_azimuth, device=self.device, dtype=torch.float32
+            ).flatten()
 
         t = trange(n_iterations, leave=True)
 
@@ -149,6 +176,8 @@ class PixelSolver:
             loss_spatial = torch.tensor(0.0, device=self.device)
             loss_temporal = torch.tensor(0.0, device=self.device)
             loss_magnitude = torch.tensor(0.0, device=self.device)
+            loss_potential = torch.tensor(0.0, device=self.device)
+            loss_azimuth = torch.tensor(0.0, device=self.device)
 
             # Magnitude Regularization (sum of squares of normalized params)
             if reguMag_Blos > 0:
@@ -197,7 +226,26 @@ class PixelSolver:
                         p_time[..., 2]
                     )
 
-            total_loss = chi2_loss + loss_spatial + loss_temporal + loss_magnitude
+            # Potential Regularization
+            if regu_potential is not None and regu_potential_weight > 0:
+                loss_potential += regu_potential_weight * potential_regularization(
+                    BQ, BU, Bq_pot, Bu_pot
+                )
+
+            # Azimuth Regularization
+            if regu_azimuth is not None and regu_azimuth_weight > 0:
+                loss_azimuth += regu_azimuth_weight * azimuth_regularization(
+                    BQ, BU, azi_ref
+                )
+
+            total_loss = (
+                chi2_loss
+                + loss_spatial
+                + loss_temporal
+                + loss_magnitude
+                + loss_potential
+                + loss_azimuth
+            )
 
             total_loss.backward()
 
@@ -212,11 +260,13 @@ class PixelSolver:
                     "spatial": f"{loss_spatial.item():.2e}",
                     "temporal": f"{loss_temporal.item():.2e}",
                     "mag": f"{loss_magnitude.item():.2e}",
+                    "pot": f"{loss_potential.item():.2e}",
+                    "azi": f"{loss_azimuth.item():.2e}",
                 }
             )
 
         print(
-            f"Final Breakdown - Chi2: {chi2_loss.item():.2e}, Spatial: {loss_spatial.item():.2e}, Temporal: {loss_temporal.item():.2e}, Magnitude: {loss_magnitude.item():.2e}"
+            f"Final Breakdown - Chi2: {chi2_loss.item():.2e}, Spatial: {loss_spatial.item():.2e}, Temporal: {loss_temporal.item():.2e}, Magnitude: {loss_magnitude.item():.2e}, Pot: {loss_potential.item():.2e}, Azi: {loss_azimuth.item():.2e}"
         )
 
     def get_field(self) -> MagneticField:

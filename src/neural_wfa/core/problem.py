@@ -22,11 +22,13 @@ class WFAProblem:
         weights: list = [1.0, 1.0, 1.0],  # Weights for [Q, U, V]
         device: torch.device = None,
         verbose: bool = True,
+        vdop: float = 0.035,
     ):
         self.obs = observation
         self.lin = line_info
         self.device = device if device else observation.device
         self.nt = getattr(observation, "nt", 1)
+        self.vdop = vdop
 
         # Move observation to device if not already
         if self.obs.device != self.device:
@@ -153,12 +155,10 @@ class WFAProblem:
 
         # Second derivative scaling term for transverse (Q/U)
         # Legacy: dIdwscl = dIdw * scl
-        # scl = 1.0 / (wl + 1e-9). Zeroed where |wl| <= vdop (0.035)
-        # Legacy uses vdop=0.035 hardcoded in __init__? Yes.
-        vdop = 0.035
+        # scl = 1.0 / (wl + 1e-9). Zeroed where |wl| <= vdop
 
         scl = 1.0 / (wavs_np + 1e-9)
-        scl[np.abs(wavs_np) <= vdop] = 0.0
+        scl[np.abs(wavs_np) <= self.vdop] = 0.0
         scl_tensor = (
             torch.from_numpy(scl.astype(np.float32)).to(self.device).reshape(1, -1)
         )  # Broadcast over pixels if needed?

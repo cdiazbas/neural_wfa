@@ -23,7 +23,7 @@ repos:
         args:
           - --fix
           - --unsafe-fixes
-          - --ignore=E702,F601,E402,F821,E722
+          - --ignore=E702,F601,E402,F821,E722,E741
       - id: ruff-format
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

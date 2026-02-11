@@ -114,3 +114,65 @@ def target_value_regularization(
     Equivalent to regu_value in legacy code.
     """
     return torch.sum(torch.abs(field_map - target_val))
+
+
+def potential_regularization(
+    B_Q: torch.Tensor,
+    B_U: torch.Tensor,
+    target_Q: torch.Tensor,
+    target_U: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Penalizes deviation of the transverse magnetic field from a reference
+    potential field.
+
+    Args:
+        B_Q (torch.Tensor): Predicted Stokes Q magnetic field component.
+        B_U (torch.Tensor): Predicted Stokes U magnetic field component.
+        target_Q (torch.Tensor): Reference potential Q field.
+        target_U (torch.Tensor): Reference potential U field.
+
+    Returns:
+        torch.Tensor: Scalar loss (mean squared difference).
+    """
+    loss_Q = torch.mean((B_Q - target_Q) ** 2)
+    loss_U = torch.mean((B_U - target_U) ** 2)
+    return loss_Q + loss_U
+
+
+def azimuth_regularization(
+    B_Q: torch.Tensor, B_U: torch.Tensor, target_azimuth: torch.Tensor
+) -> torch.Tensor:
+    """
+    Penalizes deviation of the magnetic field azimuth from a reference map
+    (e.g., from fibrils), handling the 180-degree ambiguity.
+
+    Uses the formulation:
+        loss = sum((sin(2phi) - sin(2phi_ref))^2 + (cos(2phi) - cos(2phi_ref))^2)
+    where phi is the azimuth angle derived from B_Q and B_U.
+
+    Args:
+        B_Q (torch.Tensor): Predicted Stokes Q magnetic field component.
+        B_U (torch.Tensor): Predicted Stokes U magnetic field component.
+        target_azimuth (torch.Tensor): Reference azimuth map in radians.
+
+    Returns:
+        torch.Tensor: Scalar loss.
+    """
+    # Calculate predicted azimuth components (2*phi domain)
+    # phi = 0.5 * atan2(U, Q)
+    # We need sin(2phi) and cos(2phi).
+    # sin(2phi) = U / sqrt(Q^2 + U^2)
+    # cos(2phi) = Q / sqrt(Q^2 + U^2)
+
+    Bt = torch.sqrt(B_Q**2 + B_U**2 + 1e-9)
+    sin2phi_pred = B_U / Bt
+    cos2phi_pred = B_Q / Bt
+
+    sin2phi_ref = torch.sin(2 * target_azimuth)
+    cos2phi_ref = torch.cos(2 * target_azimuth)
+
+    loss_sin = torch.mean((sin2phi_pred - sin2phi_ref) ** 2)
+    loss_cos = torch.mean((cos2phi_pred - cos2phi_ref) ** 2)
+
+    return loss_sin + loss_cos
