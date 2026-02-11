@@ -6,15 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "neural_wfa"
 version = "0.1.0"
 description = "Neural Weak Field Approximation for Solar Magnetic Field Inversion"
-authors = [
-  { name = "Souvik Bose", email = "souvik.bose@example.com" },
-]
+authors = [{ name = "Carlos Diaz", email = "carloskdb@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
 ]
 dependencies = [
     "torch>=2.0.0",
@@ -27,16 +26,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "black",
-    "flake8",
-    "jupyter",
-]
+dev = ["pytest", "black", "flake8", "jupyter", "pytest-cov", "ipython"]
 
 [project.urls]
-"Homepage" = "https://github.com/example/neural_wfa"
-"Bug Tracker" = "https://github.com/example/neural_wfa/issues"
+"Homepage" = "https://github.com/cdiazbas/neural_wfa"
+"Bug Tracker" = "https://github.com/cdiazbas/neural_wfa/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
