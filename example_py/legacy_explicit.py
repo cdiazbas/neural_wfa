@@ -85,7 +85,7 @@ outplot, out = explicit.optimization(
 
 
 # Plots
-Blos, Bhor, Bazi = outplot[:, :, 0, 0], outplot[:, :, 0, 1], outplot[:, :, 0, 2]
+Blos, Bhor, Bazi = outplot[0, :, :, 0], outplot[0, :, :, 1], outplot[0, :, :, 2]
 plt.close("all")
 extent = np.float64((0, nx, 0, ny))
 f, ax = plt.subplots(nrows=1, ncols=3, figsize=(9 * 1.5, 4.5 * 1.5))

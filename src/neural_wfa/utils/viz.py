@@ -22,7 +22,7 @@ LEGACY_PARAMS = {
     "axes.grid.which": "major",
     "axes.labelcolor": "black",
     "axes.labelpad": 10.0,
-    "axes.labelsize": 19.0,
+    "axes.labelsize": 17.0,
     "axes.labelweight": "normal",
     "axes.linewidth": 1.8,
     "axes.spines.bottom": True,
@@ -154,7 +154,7 @@ LEGACY_PARAMS = {
     "image.composite_image": True,
     "image.interpolation": "nearest",
     "image.lut": 256,
-    "image.origin": "upper",
+    "image.origin": "lower",
     "image.resample": True,
     "interactive": True,
     "legend.borderaxespad": 0.5,
@@ -253,54 +253,64 @@ LEGACY_PARAMS = {
     "xtick.color": "black",
     "xtick.direction": "out",
     "xtick.labelbottom": True,
-    "xtick.labelsize": 17.5,
+    "xtick.labelsize": 15,
     "xtick.labeltop": False,
     "xtick.major.bottom": True,
     "xtick.major.pad": 6.0,
-    "xtick.major.size": 14.0,
+    "xtick.major.size": 10.0,
     "xtick.major.top": True,
-    "xtick.major.width": 1.0,
+    "xtick.major.width": 1.2,
     "xtick.minor.bottom": True,
     "xtick.minor.pad": 3.4,
-    "xtick.minor.size": 6.0,
+    "xtick.minor.size": 5.0,
     "xtick.minor.top": True,
     "xtick.minor.visible": True,
-    "xtick.minor.width": 0.8,
+    "xtick.minor.width": 1.0,
     "xtick.top": False,
     "ytick.alignment": "center_baseline",
     "ytick.color": "black",
     "ytick.direction": "out",
     "ytick.labelleft": True,
     "ytick.labelright": False,
-    "ytick.labelsize": 17.5,
+    "ytick.labelsize": 15,
     "ytick.major.left": True,
     "ytick.major.pad": 6.0,
     "ytick.major.right": True,
-    "ytick.major.size": 14.0,
-    "ytick.major.width": 1.0,
+    "ytick.major.size": 10.0,
+    "ytick.major.width": 1.2,
     "ytick.minor.left": True,
     "ytick.minor.pad": 3.4,
     "ytick.minor.right": True,
-    "ytick.minor.size": 6.0,
+    "ytick.minor.size": 5.0,
     "ytick.minor.visible": True,
-    "ytick.minor.width": 0.8,
+    "ytick.minor.width": 1.0,
     "ytick.left": True,
     "ytick.right": False,
-    "text.latex.preamble": r"\usepackage[T1]{fontenc} \usepackage{newcent} \boldmath",
 }
 
-
-def set_plot_params(params: dict = None):
+def set_plot_params(params: dict = None, use_tex: bool = False):
     """
     Sets default matplotlib parameters.
 
-    Default (params=None) uses the robust legacy parameters for
-    consistency.
+    Args:
+        params: Custom parameters dict. If None, uses LEGACY_PARAMS.
+        use_tex: If True, enables LaTeX rendering.
     """
     if params is None:
         params = LEGACY_PARAMS.copy()
 
-    plt.rcParams.copy()  # Legacy did this, implies resets? No, copy() returns dict.
+    if use_tex:
+        params["text.usetex"] = True
+        params["text.latex.preamble"] = (
+            r"\usepackage[T1]{fontenc} \usepackage{newcent} \boldmath"
+        )
+    else:
+        params["text.usetex"] = False
+        params["font.family"] = "serif"
+        params["font.serif"] = ["DejaVu Serif"]
+        params["mathtext.fontset"] = "dejavuserif"
+        params["mathtext.default"] = "it"
+
     pylab.rcParams.update(params)
 
 
