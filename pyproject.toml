@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neural_wfa"
+version = "0.1.0"
+description = "Neural Weak Field Approximation for Solar Magnetic Field Inversion"
+authors = [{ name = "Carlos Diaz", email = "carloskdb@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "astropy>=5.0",
+    "matplotlib>=3.7.0",
+    "scipy>=1.10.0",
+    "einops>=0.6.0",
+    "tqdm>=4.65.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "flake8", "jupyter", "pytest-cov", "ipython"]
+
+[project.urls]
+"Homepage" = "https://github.com/cdiazbas/neural_wfa"
+"Bug Tracker" = "https://github.com/cdiazbas/neural_wfa/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

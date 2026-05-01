@@ -176,3 +176,7 @@ example/*npy
 example/test*
 example/wfa*
 runs/
+
+# Generated output files
+examples_py/*.png
+examples_py/**/*.png
