@@ -20,6 +20,16 @@ import json
 from pathlib import Path
 
 
+def with_newlines(lines):
+    """
+    Terminate every line but the last with '\\n'.
+
+    nbformat joins a list-valued 'source' with '' (no separator), so lines
+    without their terminator collapse into one line on GitHub and nbviewer.
+    """
+    return [line + '\n' for line in lines[:-1]] + lines[-1:]
+
+
 def parse_py_to_cells(py_content):
     """
     Parse a Python file using '# %%' cell markers into notebook cells.
@@ -35,7 +45,9 @@ def parse_py_to_cells(py_content):
     def flush():
         if current_type is None:
             return
-        # Remove trailing blank lines
+        # Remove leading and trailing blank lines
+        while current_source and current_source[0].strip() == '':
+            current_source.pop(0)
         while current_source and current_source[-1].strip() == '':
             current_source.pop()
         if not current_source:
@@ -49,9 +61,9 @@ def parse_py_to_cells(py_content):
                     cleaned.append(line[1:])
                 else:
                     cleaned.append(line)
-            cells.append({'cell_type': 'markdown', 'source': cleaned})
+            cells.append({'cell_type': 'markdown', 'source': with_newlines(cleaned)})
         else:
-            cells.append({'cell_type': 'code', 'source': list(current_source)})
+            cells.append({'cell_type': 'code', 'source': with_newlines(current_source)})
 
     for line in lines:
         stripped = line.strip()
