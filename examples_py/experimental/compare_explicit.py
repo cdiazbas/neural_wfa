@@ -1,8 +1,9 @@
-# %%
-
-# # Comparison: Deterministic vs Probabilistic Explicit Solver
+# %% [markdown]
+# # Explicit WFA Inversion (Deterministic vs Probabilistic)
 #
-# This script runs both solvers and produces side-by-side comparison plots.
+# This notebook runs the deterministic and probabilistic explicit solvers and produces side-by-side comparison plots.
+
+# %%
 
 import torch
 import numpy as np
@@ -26,9 +27,10 @@ from neural_wfa.utils.viz import set_params, torch2numpy
 set_params()
 
 
-# =============================================================================
-# Configuration
-# =============================================================================
+# %% [markdown]
+# ## 1. Configuration
+
+# %%
 # Test with and without regularization
 RUN_WITH_REGULARIZATION = True
 RUN_WITHOUT_REGULARIZATION = True
@@ -44,9 +46,10 @@ REGU_V = 1e-4
 REGU_QU = 1e-2
 
 
-# =============================================================================
-# 1. Load Data
-# =============================================================================
+# %% [markdown]
+# ## 2. Load Data
+
+# %%
 print("=" * 60)
 print("LOADING DATA")
 print("=" * 60)
@@ -68,9 +71,10 @@ print(f"Data shape: {img.shape}")
 ny, nx, ns, nw = img.shape
 
 
-# =============================================================================
-# 2. Setup Problem
-# =============================================================================
+# %% [markdown]
+# ## 3. Setup Problem
+
+# %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -79,9 +83,10 @@ lin = LineInfo(5173)
 problem = WFAProblem(obs, lin, device=device)
 
 
-# =============================================================================
-# Helper Functions
-# =============================================================================
+# %% [markdown]
+# ## 4. Helper Functions
+
+# %%
 def run_deterministic(problem, ny, nx, regu_v=0.0, regu_qu=0.0, label="det"):
     """
     Run deterministic PixelSolver and return results.
@@ -543,9 +548,10 @@ def check_noise_calibration(solver, problem, sigma_obs_used, label=""):
     }
 
 
-# =============================================================================
-# 3. Run Comparisons
-# =============================================================================
+# %% [markdown]
+# ## 5. Run Comparisons
+
+# %%
 
 results = {}
 
@@ -670,9 +676,10 @@ if RUN_WITH_REGULARIZATION:
     results["det_reg"] = det_reg
 
 
-# =============================================================================
-# 4. Summary
-# =============================================================================
+# %% [markdown]
+# ## 6. Summary
+
+# %%
 print("\n" + "=" * 60)
 print("COMPARISON COMPLETE")
 print("=" * 60)

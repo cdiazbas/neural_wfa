@@ -1,8 +1,8 @@
 # %% [markdown]
 
-# # Explicit WFA Inversion (Refactored)
+# # Explicit WFA Inversion
 #
-# This notebook demonstrates the usage of the refactored `neural_wfa` package for EXPLICIT (pixel-by-pixel) inversion.
+# This notebook demonstrates the usage of the `neural_wfa` package for explicit (pixel-by-pixel) inversion.
 
 # %%
 
@@ -108,7 +108,7 @@ solver.solve(
 
 # %% [markdown]
 
-# ## 4. Analysis & Visualization
+# ## 4. Visualize Results & Analysis
 
 # %%
 

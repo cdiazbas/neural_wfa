@@ -1,10 +1,10 @@
 # %% [markdown]
 
-# # Neural WFA Inversion (Time Series - Hash Encoding)
+# # Neural WFA Inversion (Hash Encoding, Time Series)
 #
-# This script demonstrates the usage of the refactored `neural_wfa` package for
-# inverting solar spectropolarimetric data using **Hash Encoding** Neural Fields
-# on a **simulated time series**.
+# This notebook demonstrates the usage of the `neural_wfa` package for
+# inverting solar spectropolarimetric data using Hash Encoding Neural Fields
+# on a simulated time series.
 #
 # Tests both `mode='full'` (3D trilinear hash) and `mode='hybrid'` (2D hash + 1D Fourier).
 
@@ -93,9 +93,11 @@ lin = LineInfo(5173)
 # WFA Physics Engine
 problem = WFAProblem(obs, lin, device=device)
 
+# %% [markdown]
+# ## 3. Initialize Hash Encoding Neural Fields (3D Coordinates: t, y, x)
 
-# ## 3. Initialize Hash Encoding Neural Fields (3D)
-#
+# %%
+
 # === MODE SELECTOR ===
 # Set MODE to 'full' for full 3D trilinear hash encoding
 # Set MODE to 'hybrid' for 2D spatial hash + 1D temporal Fourier

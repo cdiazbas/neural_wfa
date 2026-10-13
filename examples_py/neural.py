@@ -1,8 +1,8 @@
 # %% [markdown]
 
-# # Neural WFA Inversion (Refactored)
+# # Neural WFA Inversion
 #
-# This notebook demonstrates the usage of the refactored `neural_wfa` package for inverting solar spectropolarimetric data using Neural Fields.
+# This notebook demonstrates the usage of the `neural_wfa` package for inverting solar spectropolarimetric data using Neural Fields (MLP with Fourier features).
 
 # %%
 

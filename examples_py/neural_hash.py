@@ -1,8 +1,8 @@
 # %% [markdown]
 
-# # Neural WFA Inversion (Refactored)
+# # Neural WFA Inversion (Hash Encoding)
 #
-# This notebook demonstrates the usage of the refactored `neural_wfa` package for inverting solar spectropolarimetric data using Neural Fields.
+# This notebook demonstrates the usage of the `neural_wfa` package for inverting solar spectropolarimetric data using Hash Encoding Neural Fields.
 
 # %%
 
@@ -74,7 +74,7 @@ problem = WFAProblem(obs, lin, device=device)
 
 # %% [markdown]
 
-# ## 3. Initialize Neural Fields
+# ## 3. Initialize Hash Encoding Neural Fields
 
 # %%
 

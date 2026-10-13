@@ -1,8 +1,8 @@
 # %% [markdown]
 
-# # Probabilistic WFA Inversion (Explicit Pixel Solver)
+# # Probabilistic Explicit WFA Inversion
 #
-# This script demonstrates the probabilistic extension of WFA inversion,
+# This notebook demonstrates the probabilistic extension of WFA inversion,
 # where we estimate **probability distributions** over magnetic field parameters
 # instead of point estimates.
 
@@ -227,7 +227,7 @@ print("Saved loss history to prob_pixel_loss.png")
 
 # %% [markdown]
 
-# ## 9. Check Learned sigma_obs (if applicable)
+# ## 9. Check Learned `sigma_obs` (if applicable)
 
 # %%
 
