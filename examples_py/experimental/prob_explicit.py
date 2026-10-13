@@ -18,6 +18,7 @@ import sys
 # Ensure src is in path
 sys.path.append("src")
 sys.path.append("../src")
+sys.path.append("../../src")
 
 from neural_wfa import Observation, WFAProblem
 from neural_wfa.physics import LineInfo
@@ -32,9 +33,9 @@ set_params()
 
 # %%
 
-datadir = "example_py/plage_sst/"
+datadir = "examples_py/plage_sst/"
 if not os.path.exists(datadir):
-    datadir = "plage_sst/"
+    datadir = "../plage_sst/"
 
 # Load single snapshot
 img = np.ascontiguousarray(

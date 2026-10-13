@@ -33,7 +33,7 @@ set_params()
 # %%
 
 # Handle data path
-datadir = "example_py/plage_sst/"
+datadir = "examples_py/plage_sst/"
 if not os.path.exists(datadir):
     datadir = "plage_sst/"  # Fallback if running from inside dir
 

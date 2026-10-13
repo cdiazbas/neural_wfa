@@ -16,6 +16,7 @@ import json
 # Ensure src is in path
 sys.path.append("src")
 sys.path.append("../src")
+sys.path.append("../../src")
 
 from neural_wfa import Observation, WFAProblem
 from neural_wfa.physics import LineInfo
@@ -54,9 +55,9 @@ print("=" * 60)
 print("LOADING DATA")
 print("=" * 60)
 
-datadir = "example_py/plage_sst/"
+datadir = "examples_py/plage_sst/"
 if not os.path.exists(datadir):
-    datadir = "plage_sst/"
+    datadir = "../plage_sst/"
 
 img = np.ascontiguousarray(
     fits.open(datadir + "CRISP_5173_plage_dat.fits", "readonly")[0].data,
