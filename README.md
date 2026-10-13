@@ -1,6 +1,6 @@
 # Spectropolarimetric inversions using neural fields under the weak-field approximation
 
-This repository contains the code used to generate the results of the paper "Exploring spectropolarimetric inversions using neural fields: solar chromospheric magnetic field under the weak-field approximation" ([arXiv:2409.05156](https://arxiv.org/abs/2409.05156)).
+This repository implements the method presented in the paper "Exploring spectropolarimetric inversions using neural fields: solar chromospheric magnetic field under the weak-field approximation" ([arXiv:2409.05156](https://arxiv.org/abs/2409.05156)).
 
 
 
@@ -20,44 +20,6 @@ To install the package in editable mode:
 ```bash
 pip install -e .
 ```
-
-## Project Structure
-
-The library has been reorganized into a modular `src`-layout to ensure clean imports and clear separation of concerns:
-
-- **`core/`**: Canonical data structures and the WFA physics engine. Contains `MagneticField` (state container), `Observation` (data container), and `WFAProblem` (physics & loss).
-- **`physics/`**: Low-level physics routines including atomic line information, numerical derivatives, and potential field extrapolation.
-- **`nn/`**: Neural Network architectures including MLPs and Fourier Feature mappings for neural field representations.
-- **`optimization/`**: High-performance solvers for both pixel-wise (explicit) and neural field inversions.
-- **`regularization/`**: Unified spatial and temporal regularization schemes (L1, L2, TV, and legacy kernels).
-- **`analysis/`**: Tools for post-inversion analysis, including calibrated uncertainty estimation and quality metrics (PSNR, BPP).
-- **`utils/`**: Scientific I/O (FITS) and visualization helpers optimized for spectropolarimetric data.
-
-## Core API Highlights
-
-### `MagneticField`
-The class holding the magnetic field parameters. It handles internal normalization for optimization stability while providing physical property accessors for $B_{los}$, $B_{trans}$, and Azimuth ($\phi$). It automatically handles the 180-degree ambiguity for visualization.
-
-### `Observation`
-Standardizes spectropolarimetric data handling, providing automatic coordinate generation for neural fields and seamless batching support.
-
-### `WFAProblem`
-The bridge between physics and optimization. It manages precomputed derivatives and provides robust loss functions (Huber, Cauchy) with multi-stokes weighting.
-
-## Performance Improvements
-
-The refactored implementation provides significant speedups over the legacy codebase (implemented at the time of the paper submission) by leveraging vectorized logic and optimized GPU memory management:
-
-| Solver | Legacy Speed | Refactored Speed | Speedup | Key Optimization |
-| :--- | :--- | :--- | :--- | :--- |
-| **Explicit (Pixel)** | ~15 it/s | **~120 it/s** | **~8x** | Vectorized "hot-paths" |
-| **Neural Field** | ~7.4 it/s | **~52 it/s** | **~7x** | GPU Buffer registration |
-
-## Advanced Features
-
-- **Hash Encoding**: Supports multi-resolution hash encodings (Dense Grids, Progressive Encodings, and Hybrid Planes) for faster convergence and higher-fidelity reconstructions.
-- **Calibrated Uncertainty**: Unified uncertainty estimation matching analytical Taylor expansions with high numerical stability.
-- **Flexible Regularization**: Support for potential field extrapolation and fibril-based orientation constraints.
 
 ## Usage
 
@@ -91,13 +53,46 @@ solver.solve(n_iterations=200)
 ```
 
 ### Example scripts and notebooks
-The `examples_py/` folder contains runnable Python scripts. The `examples_ipynb/` folder contains the equivalent Jupyter notebooks:
+Each example is available as a Python script in `examples_py/` and as a Jupyter notebook in `examples_ipynb/`. They run from the repository root or from their own folder:
 
 | Example | Description |
 | :--- | :--- |
-| `explicit.py` / `explicit.ipynb` | Pixel-wise (explicit) WFA inversion |
-| `explicit_time.py` / `explicit_time.ipynb` | Explicit inversion with temporal data |
-| `neural.py` / `neural.ipynb` | Neural field inversion |
-| `neural_time.py` / `neural_time.ipynb` | Neural field with temporal sequences |
-| `neural_hash.py` / `neural_hash.ipynb` | Neural field with hash encoding |
-| `neural_hash_time.py` / `neural_hash_time.ipynb` | Hash encoding + temporal sequences |
+| `explicit` | Explicit (pixel-wise) WFA inversion |
+| `explicit_time` | Explicit WFA inversion of a time series |
+| `neural` | Neural field WFA inversion (MLP with Fourier features) |
+| `neural_hash` | Neural field WFA inversion with hash encoding |
+| `neural_time` | Neural field WFA inversion of a time series |
+| `neural_hash_time` | Neural field with hash encoding, time series |
+| `experimental/prob_explicit` | Probabilistic explicit WFA inversion |
+| `experimental/compare_explicit` | Deterministic vs probabilistic explicit inversion |
+
+
+## Project Structure
+
+The package lives in `src/neural_wfa/`:
+
+- **`core/`**: Canonical data structures and the WFA physics engine. Contains `MagneticField` (state container), `Observation` (data container), and `WFAProblem` (physics & loss).
+- **`physics/`**: Low-level physics routines including atomic line information, numerical derivatives, and potential field extrapolation.
+- **`nn/`**: Neural network architectures for neural field representations: MLPs with Fourier features and multi-resolution hash encodings.
+- **`optimization/`**: High-performance solvers for both pixel-wise (explicit) and neural field inversions.
+- **`regularization/`**: Spatial (L1/L2 smoothness, angle smoothness, potential-field and azimuth constraints) and temporal (smoothness, total variation) regularization.
+- **`analysis/`**: Uncertainty estimation for the inferred magnetic field.
+- **`probabilistic/`** *(experimental)*: Probabilistic pixel-wise solver that estimates distributions over the magnetic field parameters instead of point estimates.
+- **`utils/`**: FITS I/O and visualization helpers for spectropolarimetric data.
+
+## Core API Highlights
+
+### `MagneticField`
+The class holding the magnetic field parameters. It handles internal normalization for optimization stability while providing physical property accessors for $B_{los}$, $B_{trans}$, and Azimuth ($\phi$). It automatically handles the 180-degree ambiguity for visualization.
+
+### `Observation`
+Standardizes spectropolarimetric data handling, providing automatic coordinate generation for neural fields and seamless batching support.
+
+### `WFAProblem`
+The bridge between physics and optimization. It manages precomputed derivatives and provides robust loss functions (Huber, Cauchy) with multi-stokes weighting.
+
+## Advanced Features
+
+- **Hash Encoding**: Supports multi-resolution hash encodings (Dense Grids, Progressive Encodings, and Hybrid Planes) for faster convergence and higher-fidelity reconstructions.
+- **Uncertainty Estimation**: Analytical error propagation (diagonal approximation of the Hessian) for $B_{los}$, $B_{trans}$ and azimuth.
+- **Flexible Regularization**: Support for potential field extrapolation and fibril-based orientation constraints.
