@@ -8,13 +8,17 @@ The canonical format uses VS Code / Spyder cell markers:
                         (content follows as comment lines: # text)
 
 Usage:
-    # Batch: convert all .py files in examples_py/ → examples_ipynb/
+    # Batch: convert all .py files under examples_py/ → examples_ipynb/
     python convert_py_to_ipynb.py
 
     # Single file
     python convert_py_to_ipynb.py <input.py> <output.ipynb>
+
+    # Check only: exit 1 if any notebook is missing or out of date
+    python convert_py_to_ipynb.py --check
 """
 
+import os
 import sys
 import json
 from pathlib import Path
@@ -142,58 +146,112 @@ def create_notebook(cells):
     return notebook
 
 
+def render_notebook(input_path):
+    """
+    Convert a Python file to notebook JSON text.
+
+    Args:
+        input_path: Path to input .py file
+
+    Returns:
+        tuple: (notebook JSON text, number of cells)
+    """
+    # Read the Python file
+    with open(input_path, 'r', encoding='utf-8') as f:
+        py_content = f.read()
+
+    # Parse into cells
+    cells = parse_py_to_cells(py_content)
+
+    # Create notebook structure
+    notebook = create_notebook(cells)
+
+    return json.dumps(notebook, indent=1, ensure_ascii=False), len(cells)
+
+
 def convert_file(input_path, output_path):
     """
     Convert a single Python file to a Jupyter notebook.
-    
+
     Args:
         input_path: Path to input .py file
         output_path: Path to output .ipynb file
     """
     print(f"Converting {input_path.name} -> {output_path.name}")
-    
-    # Read the Python file
-    with open(input_path, 'r', encoding='utf-8') as f:
-        py_content = f.read()
-    
-    # Parse into cells
-    cells = parse_py_to_cells(py_content)
-    
-    # Create notebook structure
-    notebook = create_notebook(cells)
-    
+
+    text, n_cells = render_notebook(input_path)
+
     # Write the notebook
     with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(notebook, f, indent=1, ensure_ascii=False)
-    
-    print(f"  ✓ Created {output_path.name} with {len(cells)} cells")
+        f.write(text)
+
+    print(f"  ✓ Created {output_path.name} with {n_cells} cells")
+
+
+def check_files(pairs):
+    """
+    Report notebooks that are missing or differ from their Python source.
+
+    Args:
+        pairs: List of (input .py path, output .ipynb path)
+
+    Returns:
+        int: Number of stale or missing notebooks
+    """
+    stale = 0
+    for py_file, output_file in pairs:
+        rel_py, rel_nb = os.path.relpath(py_file), os.path.relpath(output_file)
+        text, _ = render_notebook(py_file)
+        if not output_file.exists():
+            print(f"  ✗ Missing {rel_nb} (from {rel_py})")
+            stale += 1
+        elif output_file.read_text(encoding='utf-8') != text:
+            print(f"  ✗ Out of date {rel_nb} (from {rel_py})")
+            stale += 1
+    return stale
 
 
 def main():
     """Main conversion function"""
     script_dir = Path(__file__).parent
+    args = sys.argv[1:]
+    check = '--check' in args
+    args = [a for a in args if a != '--check']
 
     # Single-file mode: convert_py_to_ipynb.py <input.py> <output.ipynb>
-    if len(sys.argv) == 3:
-        input_path = Path(sys.argv[1])
-        output_path = Path(sys.argv[2])
+    if len(args) == 2:
+        input_path = Path(args[0])
+        output_path = Path(args[1])
+        if check:
+            sys.exit(1 if check_files([(input_path, output_path)]) else 0)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         convert_file(input_path, output_path)
         return
 
-    # Batch mode: convert all .py files in examples_py/ → examples_ipynb/
+    # Batch mode: convert all .py files under examples_py/ → examples_ipynb/,
+    # mirroring subfolders (e.g. experimental/)
     input_dir = script_dir / 'examples_py'
     output_dir = script_dir / 'examples_ipynb'
-    output_dir.mkdir(exist_ok=True)
 
-    py_files = sorted(input_dir.glob('*.py'))
+    py_files = sorted(input_dir.rglob('*.py'))
     if not py_files:
         print("No Python files found to convert.")
         return
+    pairs = [(p, output_dir / p.relative_to(input_dir).with_suffix('.ipynb'))
+             for p in py_files]
+
+    if check:
+        stale = check_files(pairs)
+        if stale:
+            print(f"\n✗ {stale} notebook(s) out of date. "
+                  f"Run: python convert_py_to_ipynb.py")
+            sys.exit(1)
+        print(f"✓ {len(pairs)} notebooks up to date.")
+        return
 
     print(f"Found {len(py_files)} files to convert\n")
-    for py_file in py_files:
-        output_file = output_dir / py_file.with_suffix('.ipynb').name
+    for py_file, output_file in pairs:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         try:
             convert_file(py_file, output_file)
         except Exception as e:

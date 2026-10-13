@@ -35,4 +35,14 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: debug-statements
+  # examples_ipynb/ is generated from examples_py/; fail if they drift apart.
+  # always_run because the global exclude above skips .py and .ipynb.
+  - repo: local
+    hooks:
+      - id: notebooks-in-sync
+        name: examples_ipynb in sync with examples_py
+        entry: python convert_py_to_ipynb.py --check
+        language: python
+        pass_filenames: false
+        always_run: true
   # See https://github.com/python-trio/trio/pull/3255
