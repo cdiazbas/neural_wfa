@@ -1,4 +1,6 @@
-exclude: .*(\.\.fits|\.fts|\.fit|\.txt|\.csv|\.py|\.ipynb)|public/.*$
+# .ipynb are generated from examples_py/ by convert_py_to_ipynb.py; formatting
+# them here would break the notebooks-in-sync check below.
+exclude: .*(\.fits|\.fts|\.fit|\.txt|\.csv|\.ipynb)|public/.*$
 repos:
   - repo: https://github.com/PyCQA/docformatter
     rev: v1.7.7
@@ -36,7 +38,7 @@ repos:
       - id: check-yaml
       - id: debug-statements
   # examples_ipynb/ is generated from examples_py/; fail if they drift apart.
-  # always_run because the global exclude above skips .py and .ipynb.
+  # always_run because the global exclude above skips .ipynb.
   - repo: local
     hooks:
       - id: notebooks-in-sync
