@@ -77,6 +77,7 @@ def resolve_device(device: str = "auto", verbose: bool = True) -> torch.device:
 def get_free_gpu() -> torch.device:
     """
     Selects the GPU with the most free memory using nvidia-smi.
+
     Falls back to MPS or CPU if CUDA is not available.
     """
     if not torch.cuda.is_available():

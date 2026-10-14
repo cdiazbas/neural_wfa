@@ -35,7 +35,11 @@ class NeuralSolver:
         self.model_bqu = model_bqu
         self.coordinates = coordinates
         self.batch_size = batch_size
-        self.device = resolve_device(device, verbose=False) if device is not None else problem.device
+        self.device = (
+            resolve_device(device, verbose=False)
+            if device is not None
+            else problem.device
+        )
 
         # Move models to device
         self.model_blos.to(self.device)

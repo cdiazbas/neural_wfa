@@ -24,7 +24,11 @@ class PixelSolver:
     def __init__(self, problem: WFAProblem, device=None):
         self.problem = problem
         self.nt = problem.nt
-        self.device = resolve_device(device, verbose=False) if device is not None else problem.device
+        self.device = (
+            resolve_device(device, verbose=False)
+            if device is not None
+            else problem.device
+        )
 
         # Determine spatial dimensions vs total dimensions
         obs_shape = problem.obs.grid_shape

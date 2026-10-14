@@ -28,10 +28,10 @@ class WFAProblem:
     ):
         self.obs = observation
         self.lin = line_info
-        
+
         # Resolve device (fallback to observation device if None)
         self.device = resolve_device(device if device else observation.device)
-        
+
         self.nt = getattr(observation, "nt", 1)
         self.vdop = vdop
 

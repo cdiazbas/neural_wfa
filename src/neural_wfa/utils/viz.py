@@ -288,6 +288,7 @@ LEGACY_PARAMS = {
     "ytick.right": False,
 }
 
+
 def set_plot_params(params: dict = None, use_tex: bool = False):
     """
     Sets default matplotlib parameters.

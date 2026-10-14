@@ -87,6 +87,7 @@ problem = WFAProblem(obs, lin, device=device)
 # %% [markdown]
 # ## 4. Helper Functions
 
+
 # %%
 def run_deterministic(problem, ny, nx, regu_v=0.0, regu_qu=0.0, label="det"):
     """
